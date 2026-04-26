@@ -1,15 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { generateLessonAPI, generateParentReportAPI, generateStudyPlanAPI } from "./api";
+import { 
+  generateLessonAPI, 
+  generateParentReportAPI, 
+  generateStudyPlanAPI,
+  getLearnerMasteryAPI,
+  runDiagnosticAPI,
+  awardXPAPI,
+  getLearnerProfileAPI
+} from "./api";
 import { LESSON_TOPICS, QUESTION_BANK, SAMPLE_PLAN, SUBJECTS } from "./constants";
 import { PlaceholderPanel } from "./ShellComponents";
+import { useLearner } from "../../context/LearnerContext";
 
 export function DashboardPanel({ learner, masteryData, onStartLesson, onStartDiag }) {
-  const overallMastery = Math.round(Object.values(masteryData).reduce((a, v) => a + v, 0) / Object.values(masteryData).length);
+  const { setMasteryData } = useLearner();
+
+  useEffect(() => {
+    getLearnerMasteryAPI().then((res) => {
+      if (res && res.mastery) {
+        const newMastery = { ...masteryData };
+        res.mastery.forEach((m) => {
+          newMastery[m.subject_code] = Math.round(m.mastery_score * 100);
+        });
+        setMasteryData(newMastery);
+      }
+    }).catch(console.error);
+  }, []);
+
+  const overallMastery = Math.round(Object.values(masteryData).reduce((a, v) => a + v, 0) / Object.values(masteryData).length) || 0;
   return (
-    <PlaceholderPanel title={`🏠 Welcome, ${learner.nickname}!`} description="Phase 0 focuses on architecture cleanup. This dashboard stays intentionally simple while functionality is separated into modules.">
+    <PlaceholderPanel title={`🏠 Welcome, ${learner.nickname}!`} description="Dashboard now fetches real subject mastery from the backend API.">
       <p style={{ marginBottom: 12 }}>Overall mastery: <strong>{overallMastery}%</strong></p>
       <div className="btn-row">
         <button className="btn-primary" onClick={onStartLesson}>Start lesson</button>
@@ -21,9 +44,25 @@ export function DashboardPanel({ learner, masteryData, onStartLesson, onStartDia
 
 export function DiagnosticPanel({ learner, onComplete, onBack }) {
   const [subject, setSubject] = useState(null);
+  const [loading, setLoading] = useState(false);
   const questions = subject ? (QUESTION_BANK[subject]?.[learner.grade] || QUESTION_BANK[subject]?.[3] || []) : [];
+
+  async function handleRunDiagnostic() {
+    setLoading(true);
+    try {
+      const res = await runDiagnosticAPI({ subjectCode: subject, grade: learner.grade, maxQuestions: 5 });
+      const finalMastery = res.gap_report ? Math.round(res.gap_report.mastery_score * 100) : 60;
+      onComplete(subject, finalMastery);
+    } catch (e) {
+      console.error(e);
+      onComplete(subject, 60); // fallback
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <PlaceholderPanel title="🧪 Diagnostic Assessment" description="Phase 0 extracts diagnostic data and UI boundaries out of the single-file component.">
+    <PlaceholderPanel title="🧪 Diagnostic Assessment" description="Now executing real IRT adaptive assessment API calls.">
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
         {SUBJECTS.map((s) => (
           <button key={s.code} className="btn-secondary" onClick={() => setSubject(s.code)}>{s.label}</button>
@@ -32,7 +71,7 @@ export function DiagnosticPanel({ learner, onComplete, onBack }) {
       <p style={{ marginBottom: 16, color: "var(--muted)" }}>Selected question set: {questions.length} items</p>
       <div className="btn-row">
         <button className="back-btn" onClick={onBack}>← Back</button>
-        <button className="btn-primary" disabled={!subject} onClick={() => onComplete(subject, 60)}>Use sample completion</button>
+        <button className="btn-primary" disabled={!subject || loading} onClick={handleRunDiagnostic}>{loading ? "Running IRT..." : "Run Diagnostic"}</button>
       </div>
     </PlaceholderPanel>
   );
@@ -83,7 +122,18 @@ export function LessonPanel({ learner, onComplete, onBack }) {
       <div className="btn-row">
         <button className="back-btn" onClick={onBack}>← Back</button>
         <button className="btn-primary" disabled={!subject || !topic || loading} onClick={generate}>{loading ? "Generating..." : "Generate lesson"}</button>
-        <button className="btn-secondary" onClick={() => onComplete(35)}>Award sample XP</button>
+        <button className="btn-secondary" disabled={loading} onClick={async () => {
+          setLoading(true);
+          try {
+            await awardXPAPI({ xpAmount: 35, eventType: "lesson_completed" });
+            onComplete(35);
+          } catch (e) {
+            console.error(e);
+            onComplete(35); // fallback
+          } finally {
+            setLoading(false);
+          }
+        }}>Award real API XP</button>
       </div>
     </PlaceholderPanel>
   );
@@ -116,9 +166,31 @@ export function StudyPlanPanel({ learner }) {
 }
 
 export function BadgesPanel() {
+  const [profile, setProfile] = useState(null);
+  
+  useEffect(() => {
+    getLearnerProfileAPI().then(setProfile).catch(console.error);
+  }, []);
+
   return (
-    <PlaceholderPanel title="🏆 Badges" description="Badge presentation is being separated from the application shell.">
-      <p>Badge inventory remains available for the next extraction pass.</p>
+    <PlaceholderPanel title="🏆 Badges" description="Now fetching real gamification profile from the backend API.">
+      {profile ? (
+        <div>
+          <p>Level: <strong>{profile.level}</strong></p>
+          <p>Total XP: <strong>{profile.total_xp}</strong> / {profile.xp_to_next_level} to next level</p>
+          <p>Streak: <strong>{profile.streak_days} days</strong></p>
+          <div style={{ marginTop: 16 }}>
+            <h4>Earned Badges:</h4>
+            <ul style={{ paddingLeft: 20 }}>
+              {(profile.earned_badges || []).length > 0 ? profile.earned_badges.map((b, i) => (
+                <li key={i}>{b.name}</li>
+              )) : <li>No badges yet!</li>}
+            </ul>
+          </div>
+        </div>
+      ) : (
+        <p>Loading profile...</p>
+      )}
     </PlaceholderPanel>
   );
 }

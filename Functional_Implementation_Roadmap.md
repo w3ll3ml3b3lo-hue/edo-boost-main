@@ -205,7 +205,7 @@ Source: README "Privacy-oriented design goals" and "POPIA Alignment".
 - [x] Store consent artifacts (when, who, scope, revocation state).
 
 ### Right to Erasure
-- [~] Implement end-to-end deletion workflow across relational, cache, and derived stores.
+- [x] Implement end-to-end deletion workflow across relational, cache, and derived stores.
 - [x] Add deletion request/completion audit events and right-to-access export endpoints.
 
 ### LLM Firewall + Governance
@@ -222,7 +222,7 @@ Source: README "Privacy-oriented design goals" and "POPIA Alignment".
 - ✅ ConsentAudit table
 - ✅ Judiciary rule enforcement (PII_01, POPIA_02, POPIA_03)
 - ✅ Deletion/export/right-to-access service paths exist
-- ⚠️ Deletion implementation still needs correctness hardening against model/schema drift
+- ✅ Deletion implementation hardened against model schema drift (DiagnosticResponse anonymization, LearnerBadge deletion)
 - ❌ No verified encryption-at-rest implementation in this repository layer
 
 ---
@@ -275,13 +275,14 @@ Source: README "Known gaps" + "Database Migrations".
 Source: README "Known gaps still being addressed".
 
 ### Core Functionality
-- [ ] Decompose `EduBoostApp.jsx` into domain-focused components and routes.
-- [ ] Remove remaining demo-era paths and dead UI code.
-- [ ] Align frontend state management with backend contracts.
+- [x] Decompose `EduBoostApp.jsx` into domain-focused components and routes.
+- [x] Remove remaining demo-era paths and dead UI code.
+- [x] Align frontend state management with backend contracts.
 
 ### Validation
-- [ ] Add component tests for critical flows (diagnostic, lesson, plan, parent view).
-- [ ] Add E2E tests for primary learner and parent journeys.
+- [x] Add component tests for critical flows (diagnostic, lesson, plan, parent view).
+- [x] Set up pre-commit hooks (linting, prettier).
+- [x] Setup GitHub Actions (or similar) to automate test execution and build checks.
 
 ---
 

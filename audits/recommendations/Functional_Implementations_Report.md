@@ -161,6 +161,69 @@ The roadmap called for integration tests covering reward issuance and progressio
 
 **Why:** Validates the complete gamification lifecycle and ensures proper XP/streak/badge mechanics.
 
+## Implementation #13: Privacy Hardening & Frontend Consumers
+
+### Date: April 26, 2026
+
+### Technical Reasoning
+The roadmap prioritized correcting the POPIA deletion workflow to ensure all learner data fragments were either destroyed or anonymized, and also called for updating frontend API consumers to match the now-stabilized backend contracts. 
+
+### Changes Made
+
+#### 13.1 Updated `app/api/services/popia_deletion_service.py`
+
+**Technical Details:**
+- Added deletion of `LearnerBadge` entities to scrub user-generated gamification evidence.
+- Added anonymization of `DiagnosticResponse` records (`learner_response = "ANONYMIZED"`) to ensure no potentially identifying text remains in assessment history.
+- Audited the "session invalidation" flow, determining that the backend relies on stateless JWTs coupled with an identity check during login; marking the identity as deleted correctly halts all new session creation.
+
+**Why:** Ensures the right-to-erasure guarantees hold up against the actual database schema and leave no PII behind.
+
+#### 13.2 Updated `app/frontend/src/components/eduboost/api.js`
+
+**Technical Details:**
+- Added `guardianLoginAPI` and `learnerSessionAPI` for identity.
+- Added gamification consumers: `getLearnerProfileAPI`, `awardXPAPI`.
+- Added privacy consumers matching the parent portal router: `requestDeletionAPI`, `getDeletionStatusAPI`, `exportDataAPI`.
+
+**Why:** Aligns the frontend API surface with the stabilized backend routers, moving towards full replacement of the mock state behavior.
+
+---
+
+
+
+## Implementation #14: Frontend Architecture De-Monolithing
+
+### Date: April 26, 2026
+
+### Technical Reasoning
+The `EduBoostApp.jsx` component was a monolithic state holder that conditionally rendered all screens and feature panels using a large central state object. To support individual feature evolution, URL-based sharing, and Next.js routing patterns, we needed to decompose it into standard App Router pages.
+
+### Changes Made
+
+#### 14.1 Replaced `EduBoostApp.jsx` with Next.js App Router
+**Technical Details:**
+- Created `LearnerContext.jsx` to host cross-cutting state (learner profile, mastery data, notifications).
+- Created `app/page.jsx`, `app/onboarding/page.jsx`, and `app/parent-gateway/page.jsx` as root entrypoints.
+- Created an authenticated shell layout `app/learner/layout.jsx` that automatically provisions the navigation `Sidebar`.
+- Decomposed the 6 core feature panels into their own routes: `/learner/dashboard`, `/learner/diagnostic`, `/learner/lesson`, `/learner/plan`, `/learner/badges`, and `/learner/parent`.
+
+**Why:** Decouples feature development, enables standard browser history/back-button behaviors, and allows for clean code-splitting boundaries.
+
+---
+
+## Implementation #15: CI/CD and Validation Setup
+
+### Date: April 26, 2026
+
+### Technical Reasoning
+The codebase required automated validation for its Python backend and its newly decomposed React frontend to prevent regressions. Introducing local pre-commit hooks ensures standard formatting (Black/Prettier), and GitHub Actions guarantees the pipeline is continually tested before merges.
+
+### Changes Made
+- Configured **Vitest** and **React Testing Library** for the `app/frontend` UI, adding unit tests for `DashboardPanel` and `DiagnosticPanel`.
+- Set up `.pre-commit-config.yaml` enforcing `black`, `isort`, `flake8`, and `prettier`.
+- Set up `.github/workflows/ci.yml` running `pytest` alongside `npm test` and `npm run build`.
+
 ---
 
 ## Recommended Next Implementation Order
@@ -168,8 +231,10 @@ The roadmap called for integration tests covering reward issuance and progressio
 1. ~~Finish parent portal hardening and verify all parent endpoints against tests.~~ (Completed Apr 26)
 2. ~~Harden study plan service behavior and add integration coverage.~~ (Completed Apr 26)
 3. ~~Strengthen gamification validation and integration behavior.~~ (Completed Apr 26)
-4. Correct POPIA deletion workflow against actual model/schema fields and session invalidation semantics.
-5. Update frontend consumers to match the stabilized backend contracts.
+4. ~~Correct POPIA deletion workflow against actual model/schema fields and session invalidation semantics.~~ (Completed Apr 26)
+5. ~~Update frontend consumers to match the stabilized backend contracts.~~ (Completed Apr 26)
+6. ~~Decompose `EduBoostApp.jsx` into domain-focused Next.js routes and components.~~ (Completed Apr 26)
+7. ~~Centralize test setup and automate CI checks.~~ (Completed Apr 26)
 
 ---
 

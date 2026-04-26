@@ -17,13 +17,32 @@ function getLearnerPseudonymId() {
   return id;
 }
 
-async function callAPI(endpoint, body) {
+export async function createLearnerAPI(payload) {
+  const data = await callAPI("/learners/", payload);
+  if (data && data.learner_id) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("eb_learner_pseudonym_id", data.learner_id);
+    }
+  }
+  return data;
+}
+
+export async function getLearnerMasteryAPI() {
+  const data = await callAPI(`/learners/${getLearnerPseudonymId()}/mastery`, null, "GET");
+  return data;
+}
+
+async function callAPI(endpoint, body, method = "POST") {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-  const res = await fetch(`${apiUrl}${endpoint}`, {
-    method: "POST",
+  const options = {
+    method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  };
+  if (body && method !== "GET") {
+    options.body = JSON.stringify(body);
+  }
+  
+  const res = await fetch(`${apiUrl}${endpoint}`, options);
 
   if (!res.ok) {
     let detail = `API error: ${res.status}`;
@@ -54,24 +73,94 @@ export async function generateLessonAPI({ grade, subjectCode, subjectLabel, topi
   return data.lesson;
 }
 
+export async function runDiagnosticAPI({ subjectCode, grade, maxQuestions = 10 }) {
+  const data = await callAPI("/diagnostic/run", {
+    learner_id: getLearnerPseudonymId(),
+    subject_code: subjectCode,
+    grade,
+    max_questions: maxQuestions,
+  });
+  return data;
+}
+
 export async function generateStudyPlanAPI({ grade, knowledgeGaps = [], subjectsMastery = {} }) {
   const data = await callAPI("/study-plans/generate", {
     learner_id: getLearnerPseudonymId(),
     grade,
     knowledge_gaps: knowledgeGaps,
     subjects_mastery: subjectsMastery,
+    gap_ratio: 0.4,
   });
   return data.plan;
 }
 
-export async function generateParentReportAPI({ grade, streakDays, totalXp, subjectsMastery = {}, gaps = [] }) {
+export async function generateParentReportAPI() {
+  // Use a dummy guardian ID until guardian login flow is fully attached
+  const guardianId = "00000000-0000-4000-8000-000000000000";
   const data = await callAPI("/parent/report/generate", {
     learner_id: getLearnerPseudonymId(),
-    grade,
-    streak_days: streakDays || 0,
-    total_xp: totalXp || 0,
-    subjects_mastery: subjectsMastery,
-    gaps,
+    guardian_id: guardianId,
   });
   return data.report;
+}
+
+// --------------------------------------------------------
+// Auth & Identity APIs
+// --------------------------------------------------------
+
+export async function guardianLoginAPI({ email, learnerPseudonymId }) {
+  const data = await callAPI("/auth/guardian/login", {
+    email,
+    learner_pseudonym_id: learnerPseudonymId,
+  });
+  return data;
+}
+
+export async function learnerSessionAPI() {
+  const data = await callAPI("/auth/learner/session", {
+    learner_id: getLearnerPseudonymId(),
+  });
+  return data;
+}
+
+// --------------------------------------------------------
+// Gamification APIs
+// --------------------------------------------------------
+
+export async function getLearnerProfileAPI() {
+  const data = await callAPI(`/gamification/${getLearnerPseudonymId()}/profile`, null, "GET");
+  return data;
+}
+
+export async function awardXPAPI({ xpAmount, eventType, lessonId = null }) {
+  const data = await callAPI("/gamification/award-xp", {
+    learner_id: getLearnerPseudonymId(),
+    xp_amount: xpAmount,
+    event_type: eventType,
+    lesson_id: lessonId,
+  });
+  return data;
+}
+
+// --------------------------------------------------------
+// POPIA Privacy & Deletion APIs (Parent Portal)
+// --------------------------------------------------------
+
+export async function requestDeletionAPI({ guardianId, reason = "" }) {
+  const data = await callAPI("/parent/deletion/request", {
+    learner_id: getLearnerPseudonymId(),
+    guardian_id: guardianId,
+    reason,
+  });
+  return data;
+}
+
+export async function getDeletionStatusAPI({ guardianId }) {
+  const data = await callAPI(`/parent/deletion/status/${getLearnerPseudonymId()}/${guardianId}`, null, "GET");
+  return data;
+}
+
+export async function exportDataAPI({ guardianId }) {
+  const data = await callAPI(`/parent/export/${getLearnerPseudonymId()}/${guardianId}`, null, "GET");
+  return data;
 }

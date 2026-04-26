@@ -18,13 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.models.db_models import (
     AuditEvent,
     ConsentAudit,
+    DiagnosticResponse,
     DiagnosticSession,
     Learner,
+    LearnerBadge,
     LearnerIdentity,
     SessionEvent,
     StudyPlan,
     SubjectMastery,
 )
+from sqlalchemy import delete
 
 
 class PopiaDeletionService:
@@ -112,6 +115,17 @@ class PopiaDeletionService:
             diagnostic_session.knowledge_gaps = []
             diagnostic_session.status = "anonymized"
             diagnostic_session.completed_at = diagnostic_session.completed_at or executed_at
+            
+            responses_result = await self.session.execute(
+                select(DiagnosticResponse).where(DiagnosticResponse.session_id == diagnostic_session.session_id)
+            )
+            for response in responses_result.scalars().all():
+                response.learner_response = "ANONYMIZED"
+
+        # Delete all gamification badges to scrub user-generated evidence
+        await self.session.execute(
+            delete(LearnerBadge).where(LearnerBadge.learner_id == learner_id)
+        )
 
         result = await self.session.execute(
             select(StudyPlan).where(StudyPlan.learner_id == learner_id)
