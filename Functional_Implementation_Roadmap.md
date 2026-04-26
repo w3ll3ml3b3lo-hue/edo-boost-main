@@ -178,8 +178,8 @@ Source: README "Known gaps still being addressed".
 - [x] Introduce pseudonymous learner IDs in all AI-facing workflows.
 
 ### Validation
-- [ ] Add auth integration tests for token lifecycle and protected routes.
-- [ ] Add negative tests for invalid tokens and privilege escalation attempts.
+- [x] Add auth integration tests for token lifecycle and protected routes.
+- [x] Add negative tests for invalid tokens and privilege escalation attempts.
 
 ### Current Status (Apr 2026)
 - ✅ JWT-based auth for guardians
@@ -213,8 +213,8 @@ Source: README "Privacy-oriented design goals" and "POPIA Alignment".
 - [x] Add configurable deny/allow policies, redaction hooks, and learner-data boundary enforcement.
 
 ### Validation
-- [ ] Add privacy integration tests (consent required, revoked consent, erase flow).
-- [ ] Add compliance evidence exports for audit readiness.
+- [x] Add privacy integration tests (consent required, revoked consent, erase flow).
+- [x] Add compliance evidence exports for audit readiness.
 
 ### Current Status (Apr 2026)
 - ✅ PII scrubber (regex-based)
@@ -253,13 +253,13 @@ Source: README "Audit Trail" statements and architecture references.
 Source: README "Known gaps" + "Database Migrations".
 
 ### Core Functionality
-- [~] Fully adopt migration-driven schema changes with no runtime schema auto-create.
-- [~] Ensure all model changes are represented in Alembic revisions.
-- [ ] Add migration rollback paths for critical schema changes.
+- [x] Fully adopt migration-driven schema changes with no runtime schema auto-create.
+- [x] Ensure all model changes are represented in Alembic revisions.
+- [x] Add migration rollback paths for critical schema changes.
 
 ### Validation
-- [ ] Add CI checks to fail when models and migrations drift.
-- [ ] Test upgrade/downgrade in isolated test databases.
+- [x] Add CI checks to fail when models and migrations drift.
+- [x] Test upgrade/downgrade in isolated test databases.
 
 ### Current Status (Apr 2026)
 - ✅ Alembic migration system is set up
@@ -381,7 +381,7 @@ Apply to each feature area before marking complete:
 ## Suggested Execution Phases
 
 ### Phase 1: Foundation + Trust
-- [~] Auth, consent enforcement, audit events, migration discipline, CI baseline.
+- [x] Auth, consent enforcement, audit events, migration discipline, CI baseline.
 
 ### Phase 2: Core Learning Loop
 - [~] Diagnostic engine hardening, in-house model training baseline, lesson orchestration quality, dynamic study plans.

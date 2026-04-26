@@ -29,21 +29,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Learner Identities (PII SILO)
-    op.create_table(
-        "learner_identities",
-        sa.Column("identity_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("pseudonym_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("learners.learner_id"), unique=True, nullable=False),
-        sa.Column("full_name_encrypted", sa.Text),
-        sa.Column("date_of_birth_encrypted", sa.Text),
-        sa.Column("guardian_email_encrypted", sa.Text, nullable=False),
-        sa.Column("consent_version", sa.SmallInteger, nullable=False),
-        sa.Column("consent_timestamp", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("data_deletion_requested", sa.Boolean, default=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-    )
-    op.create_index("ix_learner_identities_pseudonym", "learner_identities", ["pseudonym_id"])
-
     # Learners (Pseudonymous)
     op.create_table(
         "learners",
@@ -61,6 +46,21 @@ def upgrade() -> None:
         sa.CheckConstraint("overall_mastery >= 0.0 AND overall_mastery <= 1.0", name="ck_mastery_range"),
     )
     op.create_index("ix_learners_last_active", "learners", ["last_active_at"])
+
+    # Learner Identities (PII SILO)
+    op.create_table(
+        "learner_identities",
+        sa.Column("identity_id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("pseudonym_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("learners.learner_id"), unique=True, nullable=False),
+        sa.Column("full_name_encrypted", sa.Text),
+        sa.Column("date_of_birth_encrypted", sa.Text),
+        sa.Column("guardian_email_encrypted", sa.Text, nullable=False),
+        sa.Column("consent_version", sa.SmallInteger, nullable=False),
+        sa.Column("consent_timestamp", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("data_deletion_requested", sa.Boolean, default=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    )
+    op.create_index("ix_learner_identities_pseudonym", "learner_identities", ["pseudonym_id"])
 
     # Subject Mastery
     op.create_table(
@@ -258,5 +258,5 @@ def downgrade() -> None:
     op.drop_table("study_plans")
     op.drop_table("session_events")
     op.drop_table("subject_mastery")
-    op.drop_table("learners")
     op.drop_table("learner_identities")
+    op.drop_table("learners")

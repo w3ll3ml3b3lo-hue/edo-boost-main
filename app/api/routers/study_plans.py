@@ -1,7 +1,7 @@
 """EduBoost SA — Study Plans Router"""
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel, Field
 
 from app.api.models.api_models import CurrentStudyPlanResponse, ErrorResponse, StudyPlanGenerationResponse
@@ -68,7 +68,7 @@ async def get_current_plan(learner_id: UUID):
 
 
 @router.post("/{learner_id}/refresh", response_model=StudyPlanGenerationResponse)
-async def refresh_study_plan(learner_id: UUID, gap_ratio: float = Field(default=0.4, ge=0.3, le=0.6)):
+async def refresh_study_plan(learner_id: UUID, gap_ratio: float = Query(default=0.4, ge=0.3, le=0.6)):
     """Regenerate a study plan with updated learner data."""
     async with AsyncSessionFactory() as session:
         try:

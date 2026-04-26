@@ -2,7 +2,7 @@
 from uuid import UUID
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel, Field
 
 from app.api.services.gamification_service import GamificationService
@@ -98,7 +98,7 @@ async def get_learner_profile(learner_id: UUID):
 
 
 @router.get("/leaderboard", response_model=LeaderboardResponse)
-async def get_leaderboard(limit: int = Field(default=10, ge=1, le=100)):
+async def get_leaderboard(limit: int = Query(default=10, ge=1, le=100)):
     """Get top learners by XP."""
     async with AsyncSessionFactory() as session:
         try:
