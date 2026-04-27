@@ -64,7 +64,7 @@ async def check_schema_drift():
     - migration_status: Current Alembic migration version
     """
     from sqlalchemy import inspect, text
-    from app.api.core.database import AsyncSessionFactory, get_sqlalchemy_metadata
+    from app.api.core.database import AsyncSessionFactory
     
     try:
         async with AsyncSessionFactory() as session:
@@ -174,7 +174,7 @@ async def right_to_access(
     
     This endpoint requires guardian authorization via JWT token.
     """
-    from sqlalchemy import select, text
+    from sqlalchemy import select
     from app.api.core.database import AsyncSessionFactory
     from app.api.models.db_models import Learner, LearnerIdentity, ConsentAudit, AuditEvent, DiagnosticSession, StudyPlan
     

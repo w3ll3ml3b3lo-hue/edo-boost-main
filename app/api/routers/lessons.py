@@ -1,5 +1,5 @@
 """EduBoost SA — Lessons Router"""
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import text

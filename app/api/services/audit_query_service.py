@@ -9,7 +9,7 @@ from typing import Optional
 from uuid import UUID
 from enum import Enum
 
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.models.db_models import AuditEvent

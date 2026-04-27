@@ -17,7 +17,6 @@ from app.api.services.lesson_service import (
     LessonParams,
     build_lesson_prompts,
     generate_lesson,
-    generate_lesson_from_prompts,
     generate_parent_report,
     generate_study_plan,
 )

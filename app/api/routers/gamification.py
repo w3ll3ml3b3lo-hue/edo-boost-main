@@ -2,8 +2,8 @@
 from uuid import UUID
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from app.api.services.gamification_service import GamificationService
 from app.api.core.database import AsyncSessionFactory

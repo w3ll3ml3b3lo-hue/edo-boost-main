@@ -3,13 +3,11 @@ EduBoost SA — Audit Event Emission Helpers
 
 Utility functions for emitting audit events on protected mutations.
 """
-import json
 from uuid import UUID
 from datetime import datetime
 from typing import Optional
 
 import structlog
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()

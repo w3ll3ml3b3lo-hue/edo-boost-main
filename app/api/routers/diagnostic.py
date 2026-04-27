@@ -1,6 +1,5 @@
 """EduBoost SA — Diagnostic Router (IRT Adaptive Assessment)"""
 import json
-import random
 import uuid
 from datetime import datetime
 

@@ -7,17 +7,15 @@ Monitors and tracks diagnostic engine performance metrics including:
 - Item calibration quality
 - Gap detection accuracy
 """
-import time
 import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
-from uuid import UUID
+from typing import List, Dict
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.models.db_models import DiagnosticSession, DiagnosticResponse
+from app.api.models.db_models import DiagnosticSession
 
 
 @dataclass

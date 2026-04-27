@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import UUID
 
 import asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.models.db_models import Badge, Learner, LearnerBadge
@@ -252,7 +252,7 @@ class GamificationService:
         # Fetch all active badges applicable to this learner's grade band
         result = await self.session.execute(
             select(Badge).where(
-                Badge.is_active == True,
+                Badge.is_active,
                 Badge.grade_band.in_([grade_band, "all"]),
             )
         )
@@ -341,7 +341,6 @@ class GamificationService:
         if not learner:
             raise ValueError(f"Learner {learner_id} not found")
 
-        from datetime import timedelta
 
         # Check if streak should continue or reset
         last_active = learner.last_active_at
@@ -388,10 +387,10 @@ class GamificationService:
 
         return [
             {
-                "learner_id": str(l.learner_id),
-                "total_xp": l.total_xp,
-                "level": self._calculate_level(l.total_xp),
-                "streak_days": l.streak_days,
+                "learner_id": str(learner.learner_id),
+                "total_xp": learner.total_xp,
+                "level": self._calculate_level(learner.total_xp),
+                "streak_days": learner.streak_days,
             }
-            for l in learners
+            for learner in learners
         ]

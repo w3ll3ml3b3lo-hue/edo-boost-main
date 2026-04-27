@@ -1,7 +1,6 @@
 """EduBoost SA — Judiciary (Pillar 3): constitutional review before side effects."""
 from __future__ import annotations
 
-import re
 import time
 from typing import Optional
 

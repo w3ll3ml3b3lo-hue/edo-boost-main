@@ -3,8 +3,6 @@ EduBoost SA — SQLAlchemy Database Models
 POPIA: PII columns are AES-256 encrypted at rest via Supabase Vault
 """
 import uuid
-from datetime import datetime
-from typing import Optional
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime,
     ForeignKey, Text, SmallInteger, JSON, Index, CheckConstraint

@@ -292,7 +292,6 @@ async def guardian_logout(user: dict = Depends(get_current_user)):
         r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
         
         # Calculate remaining TTL from token expiry
-        import jwt as pyjwt
         from datetime import datetime
         
         token_exp = user.get("exp")

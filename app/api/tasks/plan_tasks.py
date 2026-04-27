@@ -1,13 +1,10 @@
 """Celery background tasks for study plan generation and auto-linkage."""
 import asyncio
-from typing import Optional
-from uuid import UUID
 
 from celery.utils.log import get_task_logger
 
 from app.api.core.celery_app import celery_app
 from app.api.core.database import AsyncSessionFactory
-from app.api.services.lesson_service import generate_study_plan
 from sqlalchemy import text
 
 logger = get_task_logger(__name__)

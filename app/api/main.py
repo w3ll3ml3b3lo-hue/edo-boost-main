@@ -7,12 +7,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 import structlog
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.api.core.config import settings
 from app.api.core.database import init_test_schema
 from app.api.services.dummy_data_service import dummy_data_service
 from app.api.routers import health, learners, lessons, diagnostic, study_plans, parent, auth, system, gamification, audit
 from app.api.routers import assessments
+
+limiter = Limiter(key_func=get_remote_address)
 
 log = structlog.get_logger()
 
@@ -106,14 +111,10 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
 
 # SlowAPI rate limiter for distributed deployments
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-limiter = Limiter(key_func=get_remote_address)
+# limiter = Limiter(key_func=get_remote_address)  # Moved to top
 app.state.limiter = limiter
 
 # Add rate limit exception handler
-from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):

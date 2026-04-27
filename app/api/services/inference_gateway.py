@@ -9,7 +9,6 @@ block the FastAPI event loop.
 Supports offline-capable inference mode for low-connectivity deployments.
 """
 import os
-import re
 import json
 import structlog
 from typing import Any, Optional
