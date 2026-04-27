@@ -135,6 +135,9 @@ class GamificationService:
             return streak_badges
 
         discovery_badges = [
+            {"badge_key": "discovery_math", "name": "Math Explorer", "description": "Explore a new Maths topic", "badge_type": "discovery", "threshold": 1, "icon_url": "/badges/discovery_math.png"},
+            {"badge_key": "discovery_science", "name": "Science Explorer", "description": "Explore a new Science topic", "badge_type": "discovery", "threshold": 1, "icon_url": "/badges/discovery_science.png"},
+            {"badge_key": "discovery_english", "name": "English Explorer", "description": "Explore a new English topic", "badge_type": "discovery", "threshold": 1, "icon_url": "/badges/discovery_english.png"},
             {"badge_key": "discovery_explorer", "name": "Explorer", "description": "Try a new topic", "badge_type": "discovery", "threshold": 1, "icon_url": "/badges/discovery_explorer.png"},
             {"badge_key": "discovery_trailblazer", "name": "Trailblazer", "description": "Complete 5 new topics", "badge_type": "discovery", "threshold": 5, "icon_url": "/badges/discovery_trailblazer.png"},
         ]

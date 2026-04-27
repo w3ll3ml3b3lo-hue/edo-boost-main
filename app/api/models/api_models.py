@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
 
 class StrictSchema(BaseModel):
@@ -118,7 +118,7 @@ class DiagnosticSubmitResponse(StrictSchema):
 
 
 class GuardianLoginRequest(StrictSchema):
-    email: str = Field(min_length=3, max_length=320)
+    email: EmailStr
     learner_pseudonym_id: str = Field(min_length=1)
 
 

@@ -352,8 +352,6 @@ class PopiaDeletionService:
         }
 
     async def _verify_guardian_consent(self, learner_id: UUID, guardian_id: UUID) -> None:
-        from fastapi import HTTPException
-
         result = await self.session.execute(
             select(ConsentAudit)
             .where(ConsentAudit.pseudonym_id == learner_id, ConsentAudit.event_type == "consent_granted")
@@ -362,7 +360,7 @@ class PopiaDeletionService:
         )
         consent = result.scalar_one_or_none()
         if not consent:
-            raise HTTPException(status_code=403, detail="Guardian consent required to access learner data")
+            raise ValueError("Guardian consent required to access learner data")
 
         result = await self.session.execute(
             select(ConsentAudit)
@@ -372,4 +370,4 @@ class PopiaDeletionService:
         )
         revoked = result.scalar_one_or_none()
         if revoked and revoked.occurred_at > consent.occurred_at:
-            raise HTTPException(status_code=403, detail="Guardian consent has been revoked")
+            raise ValueError("Guardian consent has been revoked")

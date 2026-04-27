@@ -3,11 +3,12 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.api.core.database import AsyncSessionFactory
+from app.api.routers.auth import get_current_user
 from app.api.models.api_models import (
     ConsentResponse,
     ErrorResponse,
@@ -19,6 +20,11 @@ from app.api.services.parent_portal_service import ParentPortalService
 from app.api.services.popia_deletion_service import PopiaDeletionService
 
 router = APIRouter()
+
+async def require_guardian(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "guardian":
+        raise HTTPException(status_code=403, detail="This endpoint requires the 'guardian' role")
+    return user
 
 
 class ConsentRequest(BaseModel):
@@ -35,7 +41,7 @@ class DeletionRequest(BaseModel):
 
 
 @router.get("/{learner_id}/progress/{guardian_id}", response_model=LearnerProgressResponse)
-async def get_learner_progress(learner_id: UUID, guardian_id: UUID):
+async def get_learner_progress(learner_id: UUID, guardian_id: UUID, _user: dict = Depends(require_guardian)):
     """Get learner progress summary for parent portal."""
     async with AsyncSessionFactory() as session:
         try:
@@ -48,6 +54,12 @@ async def get_learner_progress(learner_id: UUID, guardian_id: UUID):
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get progress: {e}") from e
+
+
+# Backwards-compatible alias (some tests/clients use guardian-first ordering)
+@router.get("/{guardian_id}/progress/{learner_id}", response_model=LearnerProgressResponse)
+async def get_learner_progress_guardian_first(guardian_id: UUID, learner_id: UUID, _user: dict = Depends(require_guardian)):
+    return await get_learner_progress(learner_id=learner_id, guardian_id=guardian_id)
 
 
 @router.get("/{learner_id}/diagnostics/{guardian_id}")

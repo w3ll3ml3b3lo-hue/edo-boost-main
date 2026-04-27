@@ -35,7 +35,10 @@ async def generate_study_plan(request: StudyPlanRequest):
             )
             return StudyPlanGenerationResponse(success=True, plan=plan)
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse(error=str(e), code="STUDY_PLAN_REQUEST_INVALID").model_dump(),
+            ) from e
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Study plan generation failed: {e}") from e
 
