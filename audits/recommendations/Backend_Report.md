@@ -92,73 +92,56 @@ docker exec eduboost-postgres psql -U eduboost_user -d eduboost -t \
 ### [2026-04-27] Identified: `main.py` Rate-Limit Handler Syntax Bug
 
 **Roadmap Refs**: §2.1 — main.py bug fix  
-**Status**: Pending fix  
+**Status**: Complete  
 
-**What changed**: Nothing yet — identified only.  
+**What changed**:  
+Fixed unquoted `code` variable on line 110 of `app/api/main.py` to `"code"` string key. Prevents NameError/500 on rate-limited requests.
 
-**Why**:  
-Line 110 of `app/api/main.py`:
-```python
-content={"detail": {"error": "Rate limit exceeded", code: "RATE_LIMIT_EXCEEDED"}}
-```
-`code` is an unquoted variable name (undefined), not the string key `"code"`. This raises a `NameError` / `SyntaxError` at runtime whenever a rate-limited response is triggered, causing a 500 instead of a 429.
-
-**Verified by**: Code review of `app/api/main.py:110`.  
-**Commit**: —  
-**Open issues**: Fix must be applied and API restarted.
+**Verified by**: Code review + API restart.  
+**Commit**: Phase A commit  
+**Open issues**: None.
 
 ---
 
 ### [2026-04-27] Identified: Missing Phase 2 ORM Models
 
 **Roadmap Refs**: §1.3 — ORM models  
-**Status**: Pending  
+**Status**: Complete  
 
-**What changed**: Nothing yet — gap identified.  
+**What changed**:  
+Added all 6 missing ORM classes to `app/api/models/db_models.py`: `Lesson`, `Assessment`, `AssessmentAttempt`, `Report`, `ParentAccount`, `ParentLearnerLink`.
 
-**Why**:  
-`app/api/models/db_models.py` defines 13 ORM classes but is missing 6 classes that correspond to tables added in the Phase 2 migration:
-- `Lesson` (`lessons` table)
-- `Assessment` (`assessments` table)
-- `AssessmentAttempt` (`assessment_attempts` table)
-- `Report` (`reports` table)
-- `ParentAccount` (`parent_accounts` table)
-- `ParentLearnerLink` (`parent_learner_links` table)
-
-Without these ORM classes, SQLAlchemy-based queries and the future Alembic migration diff will not be able to reference these tables properly.
-
-**Commit**: —  
-**Open issues**: Add all 6 models in one commit.
+**Verified by**: Import check, no runtime errors.  
+**Commit**: Phase A commit  
+**Open issues**: None.
 
 ---
 
 ### [2026-04-27] Identified: No `assessments` Router
 
 **Roadmap Refs**: §2.9 — Assessments router  
-**Status**: Pending  
+**Status**: Complete  
 
-**What changed**: Nothing yet — gap identified.  
+**What changed**:  
+Created `app/api/routers/assessments.py` with full CRUD: list, fetch, attempt submission with server-side scoring, and learner attempt history. Registered in `main.py`.
 
-**Why**:  
-The `assessments` and `assessment_attempts` tables are seeded and ready, but there is no API router exposing them. Learners cannot take assessments, submit attempts, or retrieve their history through the API.
-
-**Commit**: —  
-**Open issues**: New router file + register in `main.py`.
+**Verified by**: Import check, endpoint registration confirmed.  
+**Commit**: Phase A commit  
+**Open issues**: None.
 
 ---
 
 ### [2026-04-27] Identified: Lesson Catalog Endpoints Missing
 
 **Roadmap Refs**: §2.3 — Lesson catalog  
-**Status**: Pending  
+**Status**: Complete  
 
-**What changed**: Nothing yet — gap identified.  
+**What changed**:  
+Added `GET /catalog` and `GET /catalog/{lesson_id}` to the lessons router. Both query the DB `lessons` table with filtering support.
 
-**Why**:  
-The `lessons` router only exposes AI generation and Redis cache endpoints. The 40 seeded DB-backed lessons cannot be browsed or fetched by the frontend. The study plan frontend needs to list lessons by subject/grade to render a learner's weekly schedule.
-
-**Commit**: —  
-**Open issues**: Add `GET /catalog` and `GET /catalog/{lesson_id}` to lessons router.
+**Verified by**: Import check.  
+**Commit**: Phase A commit  
+**Open issues**: None.
 
 ---
 

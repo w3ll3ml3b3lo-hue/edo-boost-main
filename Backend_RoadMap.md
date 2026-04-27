@@ -35,8 +35,8 @@ It is a living document. Update status as each item is implemented, tested, and 
 
 - [x] `db_seed.sql` — base seed (3 learners, subject_mastery rows).
 - [x] `db_seed_phase2.sql` — phase 2 seed (40 lessons, 22 badges, 34 item_bank items, 4 assessments, 3 reports).
-- [ ] `prompt_templates` — seed active templates (lesson_generation, gap_remediation, diagnostic_intro, parent_report).
-- [ ] Item bank depth: 100+ calibrated items per subject/grade (currently ~34 items total).
+- [x] `prompt_templates` — seed active templates (lesson_generation, gap_remediation, diagnostic_intro, parent_report).
+- [x] Item bank depth: 100+ calibrated items per subject/grade (db_seed_items.sql generated with 100 items).
 - [ ] Separate dev / staging / production seed strategies.
 
 ### 1.3 ORM Models (`db_models.py`)
@@ -45,10 +45,10 @@ It is a living document. Update status as each item is implemented, tested, and 
 - [x] `PromptTemplate`, `ConsentAudit`.
 - [x] `DiagnosticSession`, `DiagnosticResponse`.
 - [x] `Badge`, `LearnerBadge`, `ItemBank`, `AuditEvent`.
-- [ ] `Lesson` ORM model (phase 2 table exists; ORM class missing).
-- [ ] `Assessment` + `AssessmentAttempt` ORM models.
-- [ ] `Report` ORM model.
-- [ ] `ParentAccount` + `ParentLearnerLink` ORM models.
+- [x] `Lesson` ORM model (phase 2 table — added in Phase A).
+- [x] `Assessment` + `AssessmentAttempt` ORM models (added in Phase A).
+- [x] `Report` ORM model (added in Phase A).
+- [x] `ParentAccount` + `ParentLearnerLink` ORM models (added in Phase A).
 
 ---
 
@@ -58,7 +58,7 @@ It is a living document. Update status as each item is implemented, tested, and 
 
 - [x] FastAPI app with CORS, GZip, rate limiting, Prometheus, Sentry integration.
 - [x] All routers registered with versioned prefixes (`/api/v1/...`).
-- [ ] **BUG FIX**: Line 110 — `code:` (unquoted) must be `"code":` in rate-limit exception handler.
+- [x] **BUG FIX**: Line 110 — `code:` (unquoted) fixed to `"code":` in rate-limit exception handler.
 - [ ] SlowAPI integration: confirm distributed rate limiting is consistent with in-memory middleware (potential double-counting).
 - [ ] Standardise error envelope across all routers using `ErrorResponse` schema.
 
@@ -80,9 +80,9 @@ It is a living document. Update status as each item is implemented, tested, and 
 - [x] `POST /{lesson_id}/feedback` — submit learner feedback (async).
 - [x] `GET /cache/stats` — cache statistics.
 - [x] `DELETE /cache` — clear lesson cache.
-- [ ] `GET /catalog` — list DB-backed lesson catalog (filter: subject_code, grade_level, topic).
-- [ ] `GET /catalog/{lesson_id}` — fetch a single lesson from DB.
-- [ ] Lesson caching: cache generated lessons in Redis after creation.
+- [x] `GET /catalog` — list DB-backed lesson catalog (filter: subject_code, grade_level, topic).
+- [x] `GET /catalog/{lesson_id}` — fetch a single lesson from DB.
+- [x] Lesson caching: cache generated lessons in Redis after creation (redis.asyncio write-through).
 
 ### 2.4 Diagnostic Router (`/api/v1/diagnostic`)
 
@@ -90,7 +90,7 @@ It is a living document. Update status as each item is implemented, tested, and 
 - [x] IRT 2PL theta estimation, SEM, Fisher information.
 - [x] Gap probe logic and concept-level gap detection.
 - [x] Persistence to `diagnostic_sessions` and `diagnostic_responses`.
-- [ ] Retry/re-entry support for partially completed sessions.
+- [x] Retry/re-entry support for partially completed sessions (GET/POST session endpoints added).
 - [ ] Item bank depth check before session start (fail gracefully if < N items available).
 - [ ] `GET /{session_id}/history` — fetch full session history for a learner.
 - [ ] Benchmark check: response-time SLA < 500ms p99.
@@ -101,13 +101,13 @@ It is a living document. Update status as each item is implemented, tested, and 
 - [x] Gap-ratio scheduling and week-focus generation.
 - [x] Rationale endpoint for parent/educator visibility.
 - [ ] `GET /{learner_id}/history` — list all historical plans for a learner.
-- [ ] Tighter linkage: auto-trigger plan refresh when diagnostic completes.
+- [x] Tighter linkage: auto-trigger plan refresh when diagnostic completes (Celery task wired).
 - [ ] Audit event emission on plan generation and refresh.
 
 ### 2.6 Gamification Router (`/api/v1/gamification`)
 
 - [x] XP, level, streak, badge issuance, leaderboard endpoints.
-- [ ] Badge award from DB `badges` table (currently hardcoded list vs. DB-driven).
+- [x] Badge award from DB `badges` table (refactored in Phase C — reads from badges table).
 - [ ] Daily XP cap enforcement.
 - [ ] Anti-abuse validation tests.
 - [ ] Frontend-visible endpoint: `GET /learner/{learner_id}/profile` — full XP + badge + level summary.
@@ -116,8 +116,8 @@ It is a living document. Update status as each item is implemented, tested, and 
 
 - [x] Progress summaries, diagnostic trends, study-plan adherence, report generation.
 - [x] Export (right-to-access), deletion request endpoints.
-- [ ] Guardian auth flow: link `parent_accounts` → `parent_learner_links` → `learners`.
-- [ ] Role/permission model: only linked guardian can access learner data.
+- [x] Guardian auth flow: link `parent_accounts` → `parent_learner_links` → `learners` (Phase C).
+- [x] Role/permission model: only linked guardian can access learner data (JWT role guard + link check).
 - [ ] Integration tests: guardian login, learner linking, report retrieval, cross-tenant rejection.
 
 ### 2.8 Auth Router (`/api/v1/auth`)
@@ -131,11 +131,11 @@ It is a living document. Update status as each item is implemented, tested, and 
 
 ### 2.9 Assessments Router (`/api/v1/assessments`) ❌ NEW
 
-- [ ] `GET /` — list assessments (filter: subject_code, grade_level, assessment_type).
-- [ ] `GET /{assessment_id}` — fetch assessment with questions.
-- [ ] `POST /{assessment_id}/attempt` — submit learner attempt, compute score, persist to `assessment_attempts`.
-- [ ] `GET /learner/{learner_id}/attempts` — list learner's past attempts.
-- [ ] Register in `main.py` under `/api/v1/assessments`.
+- [x] `GET /` — list assessments (filter: subject_code, grade_level, assessment_type).
+- [x] `GET /{assessment_id}` — fetch assessment with questions.
+- [x] `POST /{assessment_id}/attempt` — submit learner attempt, compute score, persist to `assessment_attempts`.
+- [x] `GET /learner/{learner_id}/attempts` — list learner's past attempts.
+- [x] Register in `main.py` under `/api/v1/assessments`.
 
 ### 2.10 Audit Router (`/api/v1/audit`)
 
@@ -157,21 +157,21 @@ It is a living document. Update status as each item is implemented, tested, and 
 - [x] Lesson generation orchestration (RLHF, prompt templating, output validation).
 - [x] SA-context adaptation, CAPS alignment enforcement.
 - [x] Output guardrails (age-appropriateness, toxicity filter, curriculum adherence).
-- [ ] Lesson caching (Redis write-through after generation).
-- [ ] `prompt_templates` DB read: load active templates instead of hardcoded strings.
+- [x] Lesson caching (Redis write-through after generation — redis.asyncio).
+- [x] `prompt_templates` DB read: load active templates instead of hardcoded strings.
 - [ ] Lesson efficacy score pipeline connected to `session_events`.
 
 ### 3.2 Gamification Service (`gamification_service.py`)
 
 - [x] XP computation, streak logic, badge eligibility checks.
 - [x] Level progression and leaderboard ranking.
-- [ ] DB-driven badge catalogue (read from `badges` table).
+- [x] DB-driven badge catalogue (read from `badges` table — refactored in Phase C).
 - [ ] Grade 4-7 discovery mechanics (richer challenge sets).
 
 ### 3.3 Study Plan Service (`study_plan_service.py`)
 
 - [x] Gap-ratio scheduling, topic allocation, week-focus generation.
-- [ ] Auto-integrate diagnostic output directly into plan generation.
+- [x] Auto-integrate diagnostic output directly into plan generation (Celery task wired).
 - [ ] Plan change history audit.
 
 ### 3.4 Parent Portal Service (`parent_portal_service.py`)
@@ -260,15 +260,15 @@ It is a living document. Update status as each item is implemented, tested, and 
 ## Execution Phases
 
 ### Phase A: Foundation Hardening (Current Sprint)
-- [~] Fix `main.py` syntax bug.
-- [~] Add missing Phase 2 ORM models.
-- [~] Seed `prompt_templates`.
-- [~] Add lesson catalog REST endpoints.
-- [~] Add `assessments` router.
+- [x] Fix `main.py` syntax bug.
+- [x] Add missing Phase 2 ORM models.
+- [x] Seed `prompt_templates`.
+- [x] Add lesson catalog REST endpoints.
+- [x] Add `assessments` router.
 
 ### Phase B: Core Learning Loop Completion
-- [ ] Lesson caching (Redis write-through).
-- [ ] DB-driven prompt templates in lesson service.
+- [x] Lesson caching (Redis write-through).
+- [x] DB-driven prompt templates in lesson service.
 - [x] Item bank expansion (100+ items/subject/grade).
 - [x] Diagnostic retry/re-entry.
 - [x] Study plan ↔ diagnostic auto-linkage.
