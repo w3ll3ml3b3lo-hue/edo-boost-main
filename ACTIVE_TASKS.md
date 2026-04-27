@@ -5,14 +5,14 @@ Each item should be closed only when implemented, verified (tests or runtime val
 
 ### Scope: Backend functional verification + dummy data generator
 
-- [ ] **Docs scaffolding**
-  - [ ] Add/maintain this task list (`ACTIVE_TASKS.md`)
-  - [ ] Add/maintain an implementation log (`audits/recommendations/Implementation_Report.md`)
+- [x] **Docs scaffolding**
+  - [x] Add/maintain this task list (`ACTIVE_TASKS.md`)
+  - [x] Add/maintain an implementation log (`audits/recommendations/Implementation_Report.md`)
 
-- [ ] **Backend: functional verification**
-  - [ ] Ensure `pytest` runs in a local venv without Docker and without external LLM keys
-  - [ ] Make integration tests deterministic by stubbing inference in `APP_ENV=test`
-  - [ ] Fix any failing routers/services uncovered by tests until suite is green
+- [x] **Backend: functional verification**
+  - [x] Ensure `pytest` runs in a local venv without Docker and without external LLM keys
+  - [x] Make integration tests deterministic by stubbing inference in `APP_ENV=test`
+  - [x] Fix any failing routers/services uncovered by tests until suite is green
 
 - [ ] **Dummy data generation (post-startup, silent)**
   - [ ] Implement generator modules (DB writers) capable of creating up to **10,000** dummy records
