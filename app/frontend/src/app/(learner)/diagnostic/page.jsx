@@ -13,9 +13,9 @@ export default function DiagnosticPage() {
       learner={learner}
       onComplete={(subject, mastery) => {
         setMasteryData((prev) => ({ ...prev, [subject]: mastery }));
-        router.push("/learner/plan");
+        router.push("/plan");
       }}
-      onBack={() => router.push("/learner/dashboard")}
+      onBack={() => router.push("/dashboard")}
     />
   );
 }

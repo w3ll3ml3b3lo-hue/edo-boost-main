@@ -29,7 +29,7 @@ export default function LearnerLayout({ children }) {
         <Sidebar
           learner={learner}
           activeTab={activeTab}
-          onTab={(tabId) => router.push(`/learner/${tabId}`)}
+          onTab={(tabId) => router.push(`/${tabId}`)}
           onLogout={() => {
             setLearner(null);
             router.push("/");

@@ -12,8 +12,8 @@ export default function DashboardPage() {
     <DashboardPanel
       learner={learner}
       masteryData={masteryData}
-      onStartLesson={() => router.push("/learner/lesson")}
-      onStartDiag={() => router.push("/learner/diagnostic")}
+      onStartLesson={() => router.push("/lesson")}
+      onStartDiag={() => router.push("/diagnostic")}
     />
   );
 }

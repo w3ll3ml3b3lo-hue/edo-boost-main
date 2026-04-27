@@ -14,9 +14,9 @@ export default function LessonPage() {
       onComplete={(xp) => {
         setLearner((prev) => ({ ...prev, xp: (prev.xp || 0) + xp }));
         setBadge("Lesson Complete! 🌟");
-        router.push("/learner/dashboard");
+        router.push("/dashboard");
       }}
-      onBack={() => router.push("/learner/dashboard")}
+      onBack={() => router.push("/dashboard")}
     />
   );
 }

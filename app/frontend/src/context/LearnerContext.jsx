@@ -15,7 +15,26 @@ export function LearnerProvider({ children }) {
   });
   const [badge, setBadge] = useState(null);
 
-  // Optional: Add local storage persistence here later
+  // Load learner from localStorage on initial mount
+  useEffect(() => {
+    const saved = localStorage.getItem("eb_active_learner");
+    if (saved) {
+      try {
+        setLearner(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse saved learner", e);
+      }
+    }
+  }, []);
+
+  // Save learner to localStorage whenever it changes
+  useEffect(() => {
+    if (learner) {
+      localStorage.setItem("eb_active_learner", JSON.stringify(learner));
+    } else {
+      localStorage.removeItem("eb_active_learner");
+    }
+  }, [learner]);
 
   return (
     <LearnerContext.Provider
