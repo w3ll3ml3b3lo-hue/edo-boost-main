@@ -74,7 +74,7 @@ class Orchestrator:
             gap_grade=req.params.get("gap_grade"),
             sa_theme=req.params.get("sa_theme"),
         )
-        system_prompt, user_prompt = build_lesson_prompts(lp)
+        system_prompt, user_prompt = await build_lesson_prompts(lp)
         stamp = await j.review(action, system_prompt=system_prompt, user_prompt=user_prompt)
         await fe.publish_stamp_issued(stamp, action)
         if stamp.status == StampStatus.REJECTED:

@@ -15,6 +15,7 @@ from app.api.models.db_models import (
     DiagnosticSession,
     Learner,
     LearnerIdentity,
+    ParentLearnerLink,
     SessionEvent,
     StudyPlan,
     SubjectMastery,
@@ -196,6 +197,19 @@ class ParentPortalService:
         return {"learner_id": str(learner_id), "report_date": datetime.now().isoformat(), "sections": report_sections}
 
     async def _verify_guardian_access(self, learner_id: UUID, guardian_id: UUID) -> None:
+        """Verify guardian has access to learner data via link or consent."""
+        # 1. Check parent_learner_links table first (new path)
+        link_result = await self.session.execute(
+            select(ParentLearnerLink).where(
+                ParentLearnerLink.parent_id == guardian_id,
+                ParentLearnerLink.learner_id == learner_id,
+            )
+        )
+        link = link_result.scalar_one_or_none()
+        if link:
+            return  # Linked guardian has access
+
+        # 2. Fallback: legacy consent audit check
         result = await self.session.execute(
             select(ConsentAudit)
             .where(ConsentAudit.pseudonym_id == learner_id, ConsentAudit.event_type == "consent_granted")

@@ -186,4 +186,32 @@ Code changes implemented. Container verification blocked pending background Dock
 
 ---
 
+### [2026-04-27] Phase C: Engagement & Family Visibility
+
+**Roadmap Refs**: §2.7 (Gamification), §2.4 (Auth), §2.6 (Parent Portal), §2.9 (Assessments)  
+**Status**: Complete  
+
+**What changed**:  
+- **DB-Driven Badge Awards**: Created `db_seed_badges.sql` with 22 badge definitions (streak, mastery, milestone, discovery, assessment). Refactored `gamification_service.py` to load badges from the `badges` table via SQLAlchemy `select(Badge)` filtered by grade band, replacing 40+ lines of hardcoded Python badge lists.
+- **Guardian Auth → Learner Linking**: Extended `auth.py` with:
+  - `POST /auth/guardian/register` — bcrypt-hashed password, SHA-256 email encryption, returns JWT.
+  - `POST /auth/guardian/link-learner` — creates `ParentLearnerLink` with relationship type.
+  - `GET /auth/guardian/linked-learners` — lists linked learners with grade/XP/streak data.
+- **JWT Role Guard**: Added `get_current_user` and `require_role` FastAPI dependencies using `HTTPBearer`. All guardian endpoints enforce role-based access (`role == "guardian"`).
+- **Parent Portal Verified Link**: Updated `_verify_guardian_access` in `parent_portal_service.py` to first check `parent_learner_links` before falling back to the legacy `consent_audit` table.
+- **Assessment Pipeline XP Integration**: Wired automatic XP award (`perfect_score` or `diagnostic_complete`) and streak update into `submit_attempt` in the assessments router.
+- **Orchestrator Fix**: Awaited the now-async `build_lesson_prompts` in `orchestrator.py`.
+
+**Why**:  
+Phase C closes the engagement loop. Gamification is no longer static — it reads from DB, enabling admin badge management. Guardian auth gives parents a real account with JWT-based access. Linking + role checks prevent unauthorised access to child data (POPIA compliance). XP on assessment completion ensures learners are rewarded for every interaction.
+
+**Verified by**:  
+Code review and static analysis. Runtime verification pending container rebuild.
+
+**Commit**: pending  
+**Open issues**: Badge threshold evaluation for `mastery`, `milestone`, and `discovery` types requires per-learner metric tracking (lesson count, concept count) — stubbed for Phase D.
+
+---
+
 *This report will be updated with each completed task. Commit hashes are appended after each push.*
+

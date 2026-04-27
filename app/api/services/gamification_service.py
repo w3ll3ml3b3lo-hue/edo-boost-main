@@ -84,7 +84,7 @@ class GamificationService:
             "level": self._calculate_level(learner.total_xp),
             "xp_to_next_level": self._xp_to_next_level(learner.total_xp),
             "badges": earned_badges,
-            "can_earn_badges": self._get_available_badges(learner.grade),
+            "can_earn_badges": await self._get_available_badges(learner.grade),
         }
 
     def _calculate_level(self, total_xp: int) -> int:
@@ -94,41 +94,28 @@ class GamificationService:
         current_level = self._calculate_level(total_xp)
         return max(0, current_level * 100 - total_xp)
 
-    def _get_available_badges(self, grade: int) -> list[dict]:
+    async def _get_available_badges(self, grade: int) -> list[dict]:
+        """Get available badges from the DB, filtered by grade band."""
         grade_band = "R-3" if grade <= 3 else "4-7"
-        config = GRADE_BAND_CONFIG[grade_band]
-        badges = []
-        for badge_type in config["badge_types"]:
-            if badge_type == "streak":
-                for threshold in STREAK_THRESHOLDS:
-                    badges.append({
-                        "badge_key": f"streak_{threshold}",
-                        "name": f"{threshold}-Day Streak",
-                        "description": f"Complete lessons for {threshold} consecutive days",
-                        "badge_type": "streak",
-                        "threshold": threshold,
-                    })
-            elif badge_type == "mastery":
-                badges.extend([
-                    {"badge_key": "mastery_5", "name": "Quick Learner", "description": "Master 5 concepts", "badge_type": "mastery", "threshold": 5},
-                    {"badge_key": "mastery_10", "name": "Knowledge Seeker", "description": "Master 10 concepts", "badge_type": "mastery", "threshold": 10},
-                    {"badge_key": "mastery_25", "name": "Subject Expert", "description": "Master 25 concepts", "badge_type": "mastery", "threshold": 25},
-                ])
-            elif badge_type == "milestone":
-                badges.extend([
-                    {"badge_key": "first_lesson", "name": "First Steps", "description": "Complete your first lesson", "badge_type": "milestone", "threshold": 1},
-                    {"badge_key": "lessons_10", "name": "Dedicated Learner", "description": "Complete 10 lessons", "badge_type": "milestone", "threshold": 10},
-                    {"badge_key": "lessons_50", "name": "Scholar", "description": "Complete 50 lessons", "badge_type": "milestone", "threshold": 50},
-                ])
-            elif badge_type == "discovery":
-                badges.extend([
-                    {"badge_key": "discovery_math", "name": "Math Explorer", "description": "Explore 5 different math topics", "badge_type": "discovery", "threshold": 5},
-                    {"badge_key": "discovery_science", "name": "Science Explorer", "description": "Explore 5 different science topics", "badge_type": "discovery", "threshold": 5},
-                    {"badge_key": "discovery_english", "name": "Language Explorer", "description": "Explore 5 different language topics", "badge_type": "discovery", "threshold": 5},
-                    {"badge_key": "discovery_10", "name": "Curious Mind", "description": "Explore 10 different topics", "badge_type": "discovery", "threshold": 10},
-                    {"badge_key": "discovery_25", "name": "Renaissance Learner", "description": "Explore 25 different topics", "badge_type": "discovery", "threshold": 25},
-                ])
-        return badges
+        result = await self.session.execute(
+            select(Badge).where(
+                Badge.is_active == True,
+                Badge.grade_band.in_([grade_band, "all"]),
+            )
+        )
+        badges = result.scalars().all()
+        return [
+            {
+                "badge_id": str(b.badge_id),
+                "badge_key": b.badge_key,
+                "name": b.name,
+                "description": b.description,
+                "badge_type": b.badge_type,
+                "threshold": b.threshold,
+                "icon_url": b.icon_url,
+            }
+            for b in badges
+        ]
 
     async def award_xp(
         self,
@@ -182,21 +169,62 @@ class GamificationService:
         }
 
     async def _check_and_award_badges(self, learner: Learner) -> list[dict]:
-        """Check and award badges based on learner progress."""
+        """Check and award badges based on learner progress using DB badge definitions."""
         earned_badges = []
         grade_band = "R-3" if learner.grade <= 3 else "4-7"
-        available_badges = self._get_available_badges(learner.grade)
 
-        # Check streak badges
-        for threshold in STREAK_THRESHOLDS:
-            if learner.streak_days >= threshold:
-                badge_key = f"streak_{threshold}"
-                if not await self._has_badge(learner.learner_id, badge_key):
-                    badge = await self._create_badge(learner.learner_id, badge_key, f"{threshold}-Day Streak", f"Complete lessons for {threshold} consecutive days", grade_band)
-                    if badge:
-                        earned_badges.append(badge)
+        # Fetch all active badges applicable to this learner's grade band
+        result = await self.session.execute(
+            select(Badge).where(
+                Badge.is_active == True,
+                Badge.grade_band.in_([grade_band, "all"]),
+            )
+        )
+        db_badges = result.scalars().all()
+
+        for badge in db_badges:
+            # Skip if learner already has this badge
+            if await self._has_badge(learner.learner_id, badge.badge_key):
+                continue
+
+            # Evaluate badge criteria by type
+            earned = False
+            if badge.badge_type == "streak" and badge.threshold:
+                earned = learner.streak_days >= badge.threshold
+            elif badge.badge_type == "mastery":
+                # Mastery badges need concept count — leave for future metric tracking
+                pass
+            elif badge.badge_type == "milestone":
+                # Milestone badges need lesson count — leave for future metric tracking
+                pass
+            elif badge.badge_type == "assessment":
+                # Assessment badges — evaluated at attempt submission time
+                pass
+
+            if earned:
+                awarded = await self._award_existing_badge(learner.learner_id, badge)
+                if awarded:
+                    earned_badges.append(awarded)
 
         return earned_badges
+
+    async def _award_existing_badge(self, learner_id: UUID, badge: Badge) -> Optional[dict]:
+        """Award a pre-existing DB badge to a learner."""
+        learner_badge = LearnerBadge(
+            id=uuid.uuid4(),
+            learner_id=learner_id,
+            badge_id=badge.badge_id,
+            earned_at=datetime.now(),
+        )
+        self.session.add(learner_badge)
+        await self.session.flush()
+
+        return {
+            "badge_id": str(badge.badge_id),
+            "badge_key": badge.badge_key,
+            "name": badge.name,
+            "description": badge.description,
+        }
 
     async def _has_badge(self, learner_id: UUID, badge_key: str) -> bool:
         """Check if learner already has a specific badge."""
@@ -213,15 +241,13 @@ class GamificationService:
         return badge is not None
 
     async def _create_badge(self, learner_id: UUID, badge_key: str, name: str, description: str, grade_band: str) -> Optional[dict]:
-        """Create and award a badge to a learner."""
-        # Check if badge exists
+        """Fallback: create badge on-the-fly if not found in DB (legacy path)."""
         result = await self.session.execute(
             select(Badge).where(Badge.badge_key == badge_key)
         )
         badge = result.scalar_one_or_none()
 
         if not badge:
-            # Create new badge
             badge = Badge(
                 badge_id=uuid.uuid4(),
                 badge_key=badge_key,
@@ -234,26 +260,7 @@ class GamificationService:
             self.session.add(badge)
             await self.session.flush()
 
-        # Check if learner already has this badge
-        if await self._has_badge(learner_id, badge_key):
-            return None
-
-        # Award badge to learner
-        learner_badge = LearnerBadge(
-            id=uuid.uuid4(),
-            learner_id=learner_id,
-            badge_id=badge.badge_id,
-            earned_at=datetime.now(),
-        )
-        self.session.add(learner_badge)
-        await self.session.flush()
-
-        return {
-            "badge_id": str(badge.badge_id),
-            "badge_key": badge.badge_key,
-            "name": badge.name,
-            "description": badge.description,
-        }
+        return await self._award_existing_badge(learner_id, badge)
 
     async def update_streak(self, learner_id: UUID) -> dict:
         """Update learner streak after activity."""

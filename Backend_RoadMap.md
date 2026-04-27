@@ -269,15 +269,15 @@ It is a living document. Update status as each item is implemented, tested, and 
 ### Phase B: Core Learning Loop Completion
 - [ ] Lesson caching (Redis write-through).
 - [ ] DB-driven prompt templates in lesson service.
-- [ ] Item bank expansion (100+ items/subject/grade).
-- [ ] Diagnostic retry/re-entry.
-- [ ] Study plan ↔ diagnostic auto-linkage.
+- [x] Item bank expansion (100+ items/subject/grade).
+- [x] Diagnostic retry/re-entry.
+- [x] Study plan ↔ diagnostic auto-linkage.
 
 ### Phase C: Engagement & Family Visibility
-- [ ] DB-driven badge awards.
-- [ ] Guardian auth → learner linking.
-- [ ] Role/permission model for parent portal.
-- [ ] Assessment attempts pipeline.
+- [x] DB-driven badge awards.
+- [x] Guardian auth → learner linking.
+- [x] Role/permission model for parent portal.
+- [x] Assessment attempts pipeline.
 
 ### Phase D: Production Readiness
 - [ ] Celery job hardening.

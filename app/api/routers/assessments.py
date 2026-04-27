@@ -259,6 +259,17 @@ async def submit_attempt(
         attempt_id = insert_result.scalar()
         await session.commit()
 
+    # ── Award XP and update streak after successful attempt ──────────────
+    try:
+        from app.api.services.gamification_service import GamificationService
+        async with AsyncSessionFactory() as session:
+            service = GamificationService(session)
+            xp_type = "perfect_score" if scored["score"] >= 1.0 else "diagnostic_complete"
+            await service.award_xp(learner_id=request.learner_id, xp_type=xp_type)
+            await service.update_streak(request.learner_id)
+    except Exception:
+        pass  # Best-effort: don't fail the attempt response if gamification errors
+
     return AttemptResult(
         attempt_id=attempt_id,
         assessment_id=assessment_id,
