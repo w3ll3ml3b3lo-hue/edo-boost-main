@@ -72,11 +72,11 @@ The current codebase already includes:
 
 Known gaps still being addressed:
 
-- frontend architecture is still centered around a large `EduBoostApp.jsx` component, with some demo-era UI paths still being retired
-- database lifecycle is not yet migration-driven in this repository
-- authentication, consent, deletion, and audit guarantees are incomplete
-- CI/CD and release automation are not yet defined in-repo
-- earlier documentation overstated current production readiness
+- frontend feature coverage is still being completed and hardened (learner + guardian journeys)
+- database lifecycle and migrations are in transition to an Alembic-driven workflow; drift prevention remains a key focus
+- authentication, consent, deletion, and audit guarantees exist but still need deeper end-to-end validation coverage
+- CI/CD and release automation are present but still evolving toward production promotion gates and runbooks
+- documentation must be kept aligned with the real repository state (avoid roadmap/report drift)
 
 ## 🚀 Quick Start
 
@@ -90,7 +90,7 @@ Known gaps still being addressed:
 
 ### 1. Clone & configure
 ```bash
-git clone <your-gitlab-repo-url>
+git clone <your-github-repo-url>
 cd eduboost-sa
 # Create a .env file manually for local development and provide the required values
 

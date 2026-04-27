@@ -1,7 +1,7 @@
 # EduBoost SA — Functional Implementation Report
 
 **Generated:** April 26, 2026  
-**Last Updated:** April 26, 2026 (Documentation sync + hardening branch update)
+**Last Updated:** April 27, 2026 (Docs sync: roadmap/report/README consistency)
 **Purpose:** Comprehensive implementation log documenting all changes made to the EduBoost platform
 
 ---
@@ -245,3 +245,20 @@ Whenever implementation work changes the real status of a feature, update both:
 - `audits/recommendations/Functional_Implementations_Report.md`
 
 This avoids roadmap/report drift and keeps planning grounded in the real repository.
+
+---
+
+## Implementation #16: Docs Consistency Sync (Roadmaps + README)
+
+### Date: April 27, 2026
+
+### Technical Reasoning
+Several markdown artifacts (README + functional/production roadmaps) had small but meaningful drift (e.g., lesson caching status, item bank seeding characterization, and centralized API client completion). This creates confusion and undermines execution tracking.
+
+### Changes Made
+- Updated `Functional_Implementation_Roadmap.md` to reflect that backend lesson caching exists and to clarify item bank seeding status as “present but needs expansion.”
+- Updated `README.md` “Current State” language to avoid stale statements and emphasize ongoing hardening/validation.
+- Updated `Production_Roadmap_Issue_Tracker.md` to mark already-completed items as complete/in progress in line with the phased checklist.
+
+### Result
+Docs are aligned with each other and better reflect the repository’s current direction, reducing planning ambiguity.

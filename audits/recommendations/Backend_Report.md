@@ -27,6 +27,26 @@ Each entry follows this structure:
 
 ---
 
+### [2026-04-27] Docs — Roadmap/README Consistency Sync (Backend-facing)
+
+**Roadmap Refs**: `Backend_RoadMap.md` (cross-doc alignment), `Production_Grade_Roadmap.md` §1.2 (remove architecture drift)  
+**Status**: Complete  
+
+**What changed**:  
+- Updated repo documentation to remove known drift between roadmap claims and the current repo reality (README + roadmaps).
+- Ensured production roadmap tracking reflects items already completed (standardized orchestration paths; centralized frontend API client).
+
+**Why**:  
+Roadmaps and reports must remain reliable sources of truth. Drift causes duplicated work and incorrect prioritization.
+
+**Verified by**:  
+Manual cross-check of `README.md`, `Production_Roadmap_Issue_Tracker.md`, `Production_Roadmap_Phased_Checklist.md`, and functional roadmap items that impact backend execution.
+
+**Commit**: pending  
+**Open issues**: None (docs-only sync).
+
+---
+
 ### [2026-04-27] DB Schema — Phase 2 Migration Applied
 
 **Roadmap Refs**: §1.1 — Phase 2 DB migration  

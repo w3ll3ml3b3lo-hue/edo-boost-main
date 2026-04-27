@@ -16,12 +16,12 @@ This document tracks the full set of 236 actionable items required to move EduBo
 1. [ ] Define the single authoritative target architecture for production.
 2. [ ] Document the approved runtime components: frontend, API, Postgres, Redis, Celery workers, monitoring, and external AI providers.
 3. [ ] Decide which infrastructure path is primary: Docker, Kubernetes, Bicep, or Supabase-backed hybrid.
-4. [ ] Remove or rewrite README sections that describe non-existent folders or unsupported deployment flows.
-5. [ ] Delete dead or duplicate backend modules that no longer belong to the active architecture.
-6. [ ] Standardize one approved path for lesson generation.
-7. [ ] Standardize one approved path for study plan generation.
-8. [ ] Standardize one approved path for parent report generation.
-9. [ ] Ensure every regulated workflow passes through orchestration, validation, audit, and privacy controls.
+4. [~] Remove or rewrite README sections that describe non-existent folders or unsupported deployment flows.
+5. [~] Delete dead or duplicate backend modules that no longer belong to the active architecture.
+6. [x] Standardize one approved path for lesson generation.
+7. [x] Standardize one approved path for study plan generation.
+8. [x] Standardize one approved path for parent report generation.
+9. [x] Ensure every regulated workflow passes through orchestration, validation, audit, and privacy controls.
 10. [ ] Separate code into clear layers: routers, schemas, services, adapters, persistence, policy/compliance.
 11. [ ] Define which workflows are synchronous and which must run asynchronously.
 12. [ ] Identify all domain events that require audit logging.
@@ -69,7 +69,7 @@ This document tracks the full set of 236 actionable items required to move EduBo
 48. [ ] Break `EduBoostApp.jsx` into smaller feature modules.
 49. [ ] Create separate components for onboarding, dashboard, diagnostics, lessons, study plan, badges, and parent portal.
 50. [ ] Move inline style definitions into a maintainable styling system.
-51. [ ] Create a centralized frontend API client.
+51. [x] Create a centralized frontend API client.
 52. [ ] Remove all direct LLM provider calls from the browser.
 53. [ ] Route all AI interactions through backend endpoints only.
 54. [ ] Separate mock/demo data from production logic.

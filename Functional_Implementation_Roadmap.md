@@ -78,8 +78,8 @@ Source: README "Key Features", "Current State", and POPIA section.
 - ✅ Full lesson generation pipeline exists
 - ✅ Guardrails and SA-context prompt shaping exist
 - ⚠️ Current routing still includes external-provider failover, so fully in-house ownership is not yet complete
-- ❌ No lesson caching
-- ❌ No real in-repo nano-model training/serving path yet
+- ✅ Lesson caching exists (Redis-backed caching in the backend)
+- ❌ No real in-repo nano-model training/serving path yet (tracked in `Model_Training_Execution_Plan.md`)
 
 ---
 
@@ -266,7 +266,7 @@ Source: README "Known gaps" + "Database Migrations".
 - ✅ Baseline migration file contains CREATE TABLE statements
 - ✅ SQLAlchemy ORM models are defined for core entities
 - ⚠️ Repository docs previously drifted and overstated/understated this area
-- ❌ No seed data for item banks
+- ⚠️ Item bank seeding exists but depth/coverage still needs expansion to reach robust IRT needs (target: 100+ calibrated items per subject/grade)
 
 ---
 
