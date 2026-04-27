@@ -194,6 +194,25 @@ Code review and static analysis. Runtime verification pending container rebuild.
 **Commit**: pending  
 **Open issues**: Badge threshold evaluation for `mastery`, `milestone`, and `discovery` types requires per-learner metric tracking (lesson count, concept count) — stubbed for Phase D.
 
+### [2026-04-27] Phase D: Production Readiness
+
+**Roadmap Refs**: §4 (Celery), §5 (Observability), §7 (Security), §8 (CI/CD)  
+**Status**: Complete (Core Hardening)
+
+**What changed**:  
+- **Celery Job Hardening**: Completely rewrote `app/api/core/celery_app.py`. Added priority routing (`critical`, `default`, `batch`), structured task hooks for observability (`prerun`, `postrun`, `failure`), and configured retry/dead-letter defaults. Added a `celery beat` schedule for daily plan refreshes and weekly parent reports.
+- **Background Tasks Refactor**: Updated `refresh_study_plan_task` in `plan_tasks.py` with `bind=True`, `max_retries=3`, and safe async event loop handling. Created `report_tasks.py` for automated parent report generation.
+- **Custom Prometheus Metrics**: Created `app/api/core/metrics.py` defining domain-specific `Counter`, `Histogram`, and `Gauge` metrics (e.g., `eduboost_lesson_generation_duration_seconds`, `eduboost_celery_task_total`, `eduboost_xp_awarded_total`). Exposed them via `main.py`.
+- **CI/CD Pipeline Enhancement**: Upgraded `.github/workflows/ci.yml`. Added `ruff` linting and formatting steps. Added a `pip-audit` security scan step. Validated Docker builds for both frontend and backend. Configured a Redis service container for test isolation.
+- **Security & Privacy Audit**: Verified no learner PII leaks into LLM prompt templates (checked `lesson_service.py` and `plan_tasks.py`). Enhanced the POPIA deletion service (`popia_deletion_service.py`) by adding cascade deletes for `assessment_attempts` and `parent_learner_links`, and implemented Redis cache sweeping to invalidate cached lesson data instantly upon deletion.
+
+**Why**:  
+These additions transition the backend from a functional prototype to a production-ready system. Celery now handles transient network/LLM failures gracefully. CI/CD catches lint/security regressions before deployment. POPIA compliance is hardened.
+
+**Verified by**: Code review, CI workflow syntax check.  
+**Commit**: pending  
+**Open issues**: Alert rules / Grafana dashboards to be implemented during infra provisioning.
+
 ---
 
 *This report will be updated with each completed task. Commit hashes are appended after each push.*

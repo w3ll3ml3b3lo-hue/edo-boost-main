@@ -115,7 +115,13 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 if settings.PROMETHEUS_ENABLED:
     try:
         from prometheus_fastapi_instrumentator import Instrumentator
+        from app.api.core.metrics import METRICS_AVAILABLE
+        
         Instrumentator().instrument(app).expose(app)
+        if METRICS_AVAILABLE:
+            log.info("Custom application metrics initialized")
+        else:
+            log.warning("Custom metrics running in no-op mode (prometheus_client missing)")
     except ImportError:
         log.warning("prometheus_fastapi_instrumentator not installed, skipping metrics")
 

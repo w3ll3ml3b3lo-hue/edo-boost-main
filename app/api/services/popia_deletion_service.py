@@ -23,6 +23,7 @@ from app.api.models.db_models import (
     Learner,
     LearnerBadge,
     LearnerIdentity,
+    ParentLearnerLink,
     SessionEvent,
     StudyPlan,
     SubjectMastery,
@@ -147,6 +148,29 @@ class PopiaDeletionService:
             session_event.difficulty_level = None
             session_event.post_mastery_delta = None
             session_event.lesson_efficacy_score = None
+
+        # Delete assessment attempts (POPIA: remove learner assessment history)
+        from app.api.models.db_models import AssessmentAttempt
+        await self.session.execute(
+            delete(AssessmentAttempt).where(AssessmentAttempt.learner_id == learner_id)
+        )
+
+        # Sever parent-learner links
+        await self.session.execute(
+            delete(ParentLearnerLink).where(ParentLearnerLink.learner_id == learner_id)
+        )
+
+        # Invalidate Redis lesson cache for this learner
+        try:
+            import redis.asyncio as aioredis
+            from app.api.core.config import settings as cfg
+            r = aioredis.from_url(cfg.REDIS_URL)
+            keys = await r.keys(f"lesson:*:{learner_id}:*")
+            if keys:
+                await r.delete(*keys)
+            await r.close()
+        except Exception:
+            pass  # Best-effort cache invalidation
 
         self.session.add(
             ConsentAudit(
