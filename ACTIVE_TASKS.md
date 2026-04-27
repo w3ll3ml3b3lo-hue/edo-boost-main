@@ -14,16 +14,16 @@ Each item should be closed only when implemented, verified (tests or runtime val
   - [x] Make integration tests deterministic by stubbing inference in `APP_ENV=test`
   - [x] Fix any failing routers/services uncovered by tests until suite is green
 
-- [ ] **Dummy data generation (post-startup, silent)**
-  - [ ] Implement generator modules (DB writers) capable of creating up to **10,000** dummy records
-  - [ ] Ensure generation begins **only after** the API is up (post-startup background task)
-  - [ ] Make generation **silent** (no noisy logs; only errors should surface)
-  - [ ] Add idempotency/locking so multiple workers don’t double-generate
+- [x] **Dummy data generation (post-startup, silent)**
+  - [x] Implement generator modules (DB writers) capable of creating up to **10,000** dummy records
+  - [x] Ensure generation begins **only after** the API is up (post-startup background task)
+  - [x] Make generation **silent** (no noisy logs; only errors should surface)
+  - [x] Add idempotency/locking so multiple workers don’t double-generate
 
-- [ ] **Persistence floor**
-  - [ ] Keep **1/3 to 1/2** of generated dummy data persisted at all times
-  - [ ] Implement cleanup/rotation that never drops below the persistence floor
-  - [ ] Add configuration knobs (target size, floor ratio, cadence)
+- [x] **Persistence floor**
+  - [x] Keep **1/3 to 1/2** of generated dummy data persisted at all times
+  - [x] Implement cleanup/rotation that never drops below the persistence floor
+  - [x] Add configuration knobs (target size, floor ratio, cadence)
 
 - [ ] **Commits**
   - [ ] Commit in small batches after each milestone (docs → backend green → generator → persistence floor)

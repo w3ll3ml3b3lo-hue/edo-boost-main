@@ -10,6 +10,7 @@ import structlog
 
 from app.api.core.config import settings
 from app.api.core.database import init_test_schema
+from app.api.services.dummy_data_service import dummy_data_service
 from app.api.routers import health, learners, lessons, diagnostic, study_plans, parent, auth, system, gamification, audit
 from app.api.routers import assessments
 
@@ -68,6 +69,11 @@ async def lifespan(app: FastAPI):
         await init_test_schema()
     else:
         log.info("DB schema management is migration-driven; runtime auto-create is disabled")
+
+    # Post-startup background dummy data generation (must not block startup).
+    if settings.DUMMY_DATA_ENABLED and settings.APP_ENV != "test":
+        import asyncio
+        asyncio.create_task(dummy_data_service.run_startup_generation())
     yield
     log.info("EduBoost SA API shutting down")
 

@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     FEATURE_RLHF_COLLECTION: bool = True
     FEATURE_LEARNING_STYLE_ML: bool = True
 
+    # Dummy data generation (post-startup background job)
+    DUMMY_DATA_ENABLED: bool = False
+    DUMMY_DATA_TARGET: int = 10_000
+    DUMMY_DATA_PERSIST_MIN_RATIO: float = 0.33
+    DUMMY_DATA_PERSIST_MAX_RATIO: float = 0.50
+    DUMMY_DATA_START_DELAY_SECONDS: int = 3
+    DUMMY_DATA_BATCH_SIZE: int = 500
+    DUMMY_DATA_KIND: str = "synthetic"
+
     # Rate limiting
     RATE_LIMIT_LLM_PER_MINUTE: int = 20
     RATE_LIMIT_API_PER_MINUTE: int = 100

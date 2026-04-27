@@ -425,3 +425,24 @@ class ParentLearnerLink(Base):
         Index("ix_parent_learner_links_parent", "parent_id"),
         Index("ix_parent_learner_links_learner", "learner_id"),
     )
+
+
+class DummyDataPoint(Base):
+    """
+    Generic dummy data points for dev/testing/demo environments.
+
+    Stored separately from core learning tables so we can generate large volumes
+    without impacting domain semantics.
+    """
+
+    __tablename__ = "dummy_data_points"
+
+    data_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind = Column(String(50), nullable=False, index=True)  # e.g. "event", "telemetry", "synthetic"
+    payload = Column(JSON, nullable=False)
+    is_persistent = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("ix_dummy_data_points_kind_created", "kind", "created_at"),
+    )
