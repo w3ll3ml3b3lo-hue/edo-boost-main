@@ -35,4 +35,4 @@
 ### Epic 5: Gamification Test Hardening & Metrics (New)
 **Prompt to Agent:**
 > "Review and harden the gamification service mock tests to properly handle coroutines. Next, introduce metric events for when milestone badges are achieved, ensuring all new additions are covered by tests."
-- [ ] Status: Pending
+- [x] Status: Completed (2026-04-28)

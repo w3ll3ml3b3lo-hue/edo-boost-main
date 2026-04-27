@@ -15,6 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.models.db_models import Badge, Learner, LearnerBadge
+from app.api.core.metrics import BADGE_AWARDED_TOTAL, XP_AWARDED_TOTAL
 
 XP_CONFIG = {
     "lesson_complete": 35,
@@ -308,6 +309,10 @@ class GamificationService:
 
         await self.session.commit()
 
+        # Track XP Awarded Metric
+        if total_awarded > 0:
+            XP_AWARDED_TOTAL.labels(xp_type=xp_type).inc(total_awarded)
+
         return {
             "xp_awarded": total_awarded,
             "streak_bonus": streak_bonus,
@@ -372,6 +377,9 @@ class GamificationService:
         )
         self.session.add(learner_badge)
         await self.session.flush()
+
+        # Track Badge Awarded Metric
+        BADGE_AWARDED_TOTAL.labels(badge_type=badge.badge_type).inc()
 
         return {
             "badge_id": str(badge.badge_id),

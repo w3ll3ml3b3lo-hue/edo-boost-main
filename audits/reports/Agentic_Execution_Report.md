@@ -48,5 +48,9 @@
 ## Phase 3: Continuous Improvements
 
 ### Epic 5: Gamification Test Hardening & Metrics (New)
-- **Status**: 🔴 Pending
-- **Notes**: Newly created Epic to track gamification stability and metrics implementation.
+- **Status**: ✅ Completed (2026-04-28)
+- **Commit**: To be committed.
+- **Notes**: 
+  - Integrated `BADGE_AWARDED_TOTAL` and `XP_AWARDED_TOTAL` Prometheus counters into `gamification_service.py`.
+  - Added new test suite `TestGamificationMetrics` in `tests/unit/test_gamification_service.py` using `patch` to verify metrics are accurately tracking XP distributed and badges awarded.
+  - Tests successfully passed.
