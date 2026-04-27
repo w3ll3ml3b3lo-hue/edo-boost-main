@@ -42,7 +42,7 @@ Roadmaps and reports must remain reliable sources of truth. Drift causes duplica
 **Verified by**:  
 Manual cross-check of `README.md`, `Production_Roadmap_Issue_Tracker.md`, `Production_Roadmap_Phased_Checklist.md`, and functional roadmap items that impact backend execution.
 
-**Commit**: pending  
+**Commit**: 6c8d611  
 **Open issues**: None (docs-only sync).
 
 ---

@@ -1,101 +1,101 @@
 # EduBoost SA Implementation Improvement Roadmap
 **Five-Pillar Constitutional Architecture · Phases 1–4**
 
-This document consolidates the technical improvement backlog for EduBoost SA, combining the original Phase 1–3 roadmap with a detailed review of the current codebase. Items are grouped by severity and strategic impact. [cite_start]Each todo is actionable with a clear scope and rationale. [cite: 2, 3]
+This document consolidates the technical improvement backlog for EduBoost SA, combining the original Phase 1–3 roadmap with a detailed review of the current codebase. Items are grouped by severity and strategic impact. Each todo is actionable with a clear scope and rationale.
 
 ## Phases at a Glance
-[cite_start]Phases are colour-coded based on priority and focus areas: [cite: 4, 6]
+Phases are colour-coded based on priority and focus areas:
 
 | Phase | Focus | Description |
 | :--- | :--- | :--- |
-| 🔴 **Phase 1** | Critical Bugs & Security | Fix Before Any User Traffic (6 items) |
-| 🟠 **Phase 2** | Pipeline Completion | Wire Up Missing Five-Pillar Paths (5 items) |
-| 🟡 **Phase 3** | Optimisation & Developer Experience | Reduce fragility and improve maintainability (5 items) |
-| 🟢 **Phase 4** | Pedagogical & Accessibility Hardening | Deepen educational quality and broaden accessibility (5 items) |
+| **Phase 1** | Critical Bugs & Security | Fix Before Any User Traffic (6 items) |
+| **Phase 2** | Pipeline Completion | Wire Up Missing Five-Pillar Paths (5 items) |
+| **Phase 3** | Optimisation & Developer Experience | Reduce fragility and improve maintainability (5 items) |
+| **Phase 4** | Pedagogical & Accessibility Hardening | Deepen educational quality and broaden accessibility (5 items) |
 
 ---
 
 ## 🔴 Phase 1: Critical Bugs & Security
-*Must be resolved before any real learner traffic. These items involve broken functionality, POPIA exposure, or authentication bypass.* [cite: 7]
+*Must be resolved before any real learner traffic. These items involve broken functionality, POPIA exposure, or authentication bypass.*
 
-1.  [cite_start]**Delete `app/api/services/lessons_router.py`** [cite: 8]
+1.  **Delete `app/api/services/lessons_router.py`**
     * **Rationale:** This file is a dead draft superseded by `app/api/routers/lessons.py`. It contains non-existent imports (`from orchestrator import OperationRequest`) that cause `ImportError`.
     * **Action:** Remove the file entirely and add a linting rule to prevent future accumulation of dead code.
 
-2.  [cite_start]**Fix guardian authentication: verify guardian exists before minting JWT** [cite: 9]
+2.  **Fix guardian authentication: verify guardian exists before minting JWT**
     * **Rationale:** The `POST /api/v1/auth/guardian/login` handler currently returns a signed JWT without verifying if the `learner_pseudonym_id` exists or if the email matches stored records.
     * **Action:** Add a database lookup against `learner_identities` to decrypt and compare stored emails before issuing tokens. Return HTTP 401 on failure.
 
-3.  [cite_start]**Route frontend lesson generation through the FastAPI backend, not the Anthropic API directly** [cite: 10]
+3.  **Route frontend lesson generation through the FastAPI backend, not the Anthropic API directly**
     * **Rationale:** `EduBoostApp.jsx` currently calls Anthropic directly, bypassing the Judiciary, Fourth Estate audit, and PII scrubber. This exposes PII and violates POPIA.
     * **Action:** Replace `callClaude()` in the frontend with a call to the backend `/api/v1/lessons/generate`. Remove all direct Anthropic calls from the frontend.
 
-4.  [cite_start]**Upgrade learner ID hashing to use a salted SHA-256 (HMAC)** [cite: 11]
+4.  **Upgrade learner ID hashing to use a salted SHA-256 (HMAC)**
     * **Rationale:** Current plain SHA-256 hashes of UUIDs are vulnerable to brute-force reversal.
     * **Action:** Replace plain hashing in `orchestrator.py` and `profiler.py` with `hmac.new(SALT.encode(), learner_id.encode(), 'sha256')` using a secret `ENCRYPTION_SALT`.
 
-5.  [cite_start]**Replace the synchronous `Anthropic()` client with `AsyncAnthropic()`** [cite: 12]
+5.  **Replace the synchronous `Anthropic()` client with `AsyncAnthropic()`**
     * **Rationale:** The blocking synchronous client in `inference_gateway.py` stalls the FastAPI event loop for 2–8 seconds per call, serializing all requests under load.
     * **Action:** Implement `AsyncAnthropic()` and use `await client.messages.create(...)`.
 
-6.  **Validate LLM JSON output with Pydantic before it reaches downstream layers** [cite: 13]
+6.  **Validate LLM JSON output with Pydantic before it reaches downstream layers**
     * **Rationale:** Schema mismatches in LLM output currently cause opaque 500 errors.
     * **Action:** Wrap parsing with `model_validate()` and catch `ValidationError`. Return HTTP 422 with structured errors instead of raw LLM output.
 
 ---
 
 ## 🟠 Phase 2: Pipeline Completion
-*The five-pillar architecture is designed but only partially wired. [cite_start]These items close the gaps between the design and what is actually executed at runtime.* [cite: 14]
+*The five-pillar architecture is designed but only partially wired. These items close the gaps between the design and what is actually executed at runtime.*
 
-7.  [cite_start]**Wire `FourthEstate` singleton to `settings.REDIS_URL`** [cite: 15]
+7.  **Wire `FourthEstate` singleton to `settings.REDIS_URL`**
     * **Rationale:** The audit bus currently defaults to an in-memory `deque` capped at 1000 events, which is lost on restart.
     * **Action:** Update the factory to use `FourthEstate(redis_url=settings.REDIS_URL, ...)` to activate the permanent regulatory-grade audit trail.
 
-8.  [cite_start]**Implement Redis read/write in the Ether Profiler (Pillar 5)** [cite: 16]
+8.  **Implement Redis read/write in the Ether Profiler (Pillar 5)**
     * **Rationale:** The profiler currently returns default profiles and never saves computed archetypes to Redis, causing every lesson to use default tone parameters.
     * **Action:** Implement Redis `get` and `setex` logic in `EtherProfiler` to store and retrieve `LearnerEtherProfile` data.
 
-9.  [cite_start]**Add `GENERATE_STUDY_PLAN` and `GENERATE_PARENT_REPORT` to `ActionType` and route through Orchestrator** [cite: 17]
+9.  **Add `GENERATE_STUDY_PLAN` and `GENERATE_PARENT_REPORT` to `ActionType` and route through Orchestrator**
     * **Rationale:** These endpoints currently bypass the Orchestrator, Judiciary, and Fourth Estate audit bus.
     * **Action:** Update the `ActionType` enum, add constitutional rules (POPIA_01, PII_01) to the corpus, and route these actions through the Orchestrator.
 
-10. [cite_start]**Implement lesson caching and return `lesson_id` from the generation endpoint** [cite: 18]
+10. **Implement lesson caching and return `lesson_id` from the generation endpoint**
     * **Rationale:** Generated lessons are currently not stored, causing the `GET /api/v1/lessons/{lesson_id}` endpoint to always return 404.
     * **Action:** Generate a UUID `lesson_id` upon generation, store the JSON in Redis with `SETEX`, and include the ID in the API response.
 
-11. [cite_start]**Add input schema validation to `generate_study_plan` and `generate_parent_report`** [cite: 19]
+11. **Add input schema validation to `generate_study_plan` and `generate_parent_report`**
     * **Rationale:** Current functions accept raw primitives, potentially allowing PII to bypass Judiciary review.
     * **Action:** Create `StudyPlanParams` and `ParentReportParams` Pydantic models with strict validation to reject unknown keys.
 
 ---
 
 ## 🟡 Phase 3: Optimisation & Developer Experience
-[cite_start]*These items reduce fragility, improve maintainability, and close subtle correctness issues.* [cite: 20]
+*These items reduce fragility, improve maintainability, and close subtle correctness issues.*
 
-12. [cite_start]**Add a Redis circuit breaker and local-log fallback to the Fourth Estate audit bus** [cite: 21]
+12. **Add a Redis circuit breaker and local-log fallback to the Fourth Estate audit bus**
     * **Rationale:** If Redis is down, audit events are currently lost.
     * **Action:** Implement a circuit breaker that falls back to a local JSONL log file after three failures and emits Prometheus metrics.
 
-13. [cite_start]**Reconcile PII regex patterns between `inference_gateway.py` and `judiciary.py`** [cite: 22]
+13. **Reconcile PII regex patterns between `inference_gateway.py` and `judiciary.py`**
     * **Rationale:** Different files use different regex for South African phone numbers (some missing 08x and 09x ranges).
     * **Action:** Centralize patterns in `app/api/core/pii_patterns.py` and add regression tests for mastery scores (e.g., ensuring `0.62` isn't flagged as a number).
 
-14. [cite_start]**Externalise prompt strings into Jinja2 templates in a `/prompts` directory** [cite: 23]
+14. **Externalise prompt strings into Jinja2 templates in a `/prompts` directory**
     * **Rationale:** Prompts are currently hardcoded in Python, making it difficult for curriculum experts to edit them without touching code.
     * **Action:** Move prompts to `.jinja2` files and wire them to the existing `PromptTemplate` database table for RLHF tracking.
 
-15. [cite_start]**Document Ether archetypes and add a seeding fixture for development** [cite: 24]
+15. **Document Ether archetypes and add a seeding fixture for development**
     * **Rationale:** Kabbalistic names like `KETER` and `YESOD` are opaque to new contributors.
     * **Action:** Add a docstring mapping archetypes to behavioral meanings and create a test fixture factory for integration testing.
 
-16. [cite_start]**Separate `--cov` flags into a dedicated `make coverage` target** [cite: 25]
+16. **Separate `--cov` flags into a dedicated `make coverage` target**
     * **Rationale:** Running coverage on every test adds significant overhead to the TDD loop.
     * **Action:** Move coverage flags from `pytest.ini` to a `Makefile` or `pyproject.toml` to keep standard test runs fast.
 
 ---
 
 ## 🟢 Phase 4: Pedagogical & Accessibility Hardening
-[cite_start]*Focuses on Grade R–1 voice interaction, stateful diagnostics, and offline support.* [cite: 26]
+*Focuses on Grade R–1 voice interaction, stateful diagnostics, and offline support.*
 
 17. [cite_start]**Implement the STT/TTS gateway for Grade R–1 voice interaction** [cite: 27]
     * **Rationale:** Young learners (ages 5–7) cannot always read; voice interaction is required for accessibility.

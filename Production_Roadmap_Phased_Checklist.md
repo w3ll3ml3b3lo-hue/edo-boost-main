@@ -22,20 +22,20 @@ This phase removes unsafe shortcuts, aligns documentation with reality, and clos
 - [ ] Decide which infrastructure path is primary: Docker, Kubernetes, Bicep, or Supabase-backed hybrid.
 - [ ] Remove or rewrite README sections that describe non-existent folders or unsupported deployment flows.
 - [ ] Delete dead or duplicate backend modules that no longer belong to the active architecture.
-- [ ] Standardize one approved path for lesson generation.
-- [ ] Standardize one approved path for study plan generation.
-- [ ] Standardize one approved path for parent report generation.
+- [x] Standardize one approved path for lesson generation.
+- [x] Standardize one approved path for study plan generation.
+- [x] Standardize one approved path for parent report generation.
 
 ### Immediate backend and frontend safety
 
 - [ ] Remove all browser-direct AI provider calls.
 - [ ] Route all AI interactions through backend endpoints only.
-- [ ] Create a centralized frontend API client.
-- [ ] Fix guardian authentication and authorization.
-- [ ] Verify guardian identity before issuing guardian JWTs.
-- [ ] Verify guardian-to-learner relationship before granting access.
+- [x] Create a centralized frontend API client.
+- [x] Fix guardian authentication and authorization.
+- [x] Verify guardian identity before issuing guardian JWTs.
+- [x] Verify guardian-to-learner relationship before granting access.
 - [ ] Move all privacy-sensitive enforcement from UI messaging into backend logic.
-- [ ] Ensure every regulated workflow passes through orchestration, validation, audit, and privacy controls.
+- [x] Ensure every regulated workflow passes through orchestration, validation, audit, and privacy controls.
 
 ### Config and secrets
 
@@ -48,20 +48,20 @@ This phase removes unsafe shortcuts, aligns documentation with reality, and clos
 ### Immediate correctness fixes
 
 - [ ] Remove runtime DB auto-create from production path.
-- [ ] Add strict schemas and validation to all critical endpoints.
+- [x] Add strict schemas and validation to all critical endpoints.
 - [ ] Audit every route for missing request and response schemas.
-- [ ] Add strict Pydantic models to every route.
+- [x] Add strict Pydantic models to every route.
 - [ ] Reject unknown input fields for sensitive endpoints.
 - [ ] Validate LLM JSON against Pydantic models before downstream use.
 - [ ] Add business-rule validation for grade, subject, language, and mastery values.
 
 ### Immediate documentation and maintainability
 
-- [ ] Update the README to stop overstating current production readiness.
-- [ ] Update `README.md` to reflect the actual repo state.
-- [ ] Document known limitations and unsupported flows honestly.
-- [ ] Break `EduBoostApp.jsx` into smaller feature modules.
-- [ ] Break up `EduBoostApp.jsx`.
+- [x] Update the README to stop overstating current production readiness.
+- [x] Update `README.md` to reflect the actual repo state.
+- [x] Document known limitations and unsupported flows honestly.
+- [x] Break `EduBoostApp.jsx` into smaller feature modules.
+- [x] Break up `EduBoostApp.jsx`.
 - [ ] Create separate components for onboarding, dashboard, diagnostics, lessons, study plan, badges, and parent portal.
 - [ ] Separate mock/demo data from production logic.
 
@@ -95,9 +95,9 @@ This phase establishes reliable backend behavior, privacy enforcement, durable p
 - [ ] Add retry policies with bounded backoff for external AI calls.
 - [ ] Add circuit breakers around provider failures.
 - [ ] Add idempotency protection for retry-prone write operations.
-- [ ] Persist generated lessons with durable IDs.
-- [ ] Persist generated study plans where product history is required.
-- [ ] Persist parent reports where product history is required.
+- [x] Persist generated lessons with durable IDs.
+- [x] Persist generated study plans where product history is required.
+- [x] Persist parent reports where product history is required.
 - [ ] Define cache versus database ownership for every generated artifact.
 - [ ] Add structured logging conventions across backend modules.
 - [ ] Add correlation/request IDs to logs.
@@ -112,7 +112,7 @@ This phase establishes reliable backend behavior, privacy enforcement, durable p
 - [ ] Add role-based authorization rules.
 - [ ] Add context-aware authorization for sensitive endpoints.
 - [ ] Define token expiry, rotation, and revocation behavior.
-- [ ] Centralize PII detection patterns in one module.
+- [x] Centralize PII detection patterns in one module.
 - [ ] Reconcile inconsistencies in current scrubber rules.
 - [ ] Add tests to ensure learner IDs never reach AI providers.
 - [ ] Add tests to ensure guardian email never reaches AI providers.
@@ -140,7 +140,7 @@ This phase establishes reliable backend behavior, privacy enforcement, durable p
 - [ ] Reduce oversized component responsibilities.
 - [ ] Introduce reusable UI primitives for buttons, cards, badges, banners, and forms.
 - [ ] Review local storage/session storage usage for sensitive data exposure.
-- [ ] Ensure guardian-specific flows are clearly separated from learner flows.
+- [x] Ensure guardian-specific flows are clearly separated from learner flows.
 - [ ] Add frontend error telemetry for critical failures.
 
 ### Phase 1 exit criteria
@@ -266,7 +266,7 @@ This phase improves accessibility, multilingual readiness, AI governance, usabil
 
 ### Data and AI governance
 
-- [ ] Move hardcoded prompts into versioned template files.
+- [x] Move hardcoded prompts into versioned template files.
 - [ ] Track prompt versions in storage or metadata.
 - [ ] Define a review process for prompt changes.
 - [ ] Validate every AI output against strict schemas.
@@ -299,7 +299,7 @@ This phase improves accessibility, multilingual readiness, AI governance, usabil
 - [ ] Add voice support planning for early-grade learners if this remains a product goal.
 - [ ] Validate age-appropriate reading complexity by grade band.
 - [ ] Test product flows on lower-end Android devices.
-- [ ] Make diagnostic sessions stateful instead of simulated where needed.
+- [x] Make diagnostic sessions stateful instead of simulated where needed.
 - [ ] Ensure guardian controls are functional, not just presentational.
 - [ ] Add downloadable learner data exports if product requirements require it.
 - [ ] Add request status visibility for deletion and privacy actions.
