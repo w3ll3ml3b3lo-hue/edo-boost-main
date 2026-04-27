@@ -162,4 +162,28 @@ The `lessons` router only exposes AI generation and Redis cache endpoints. The 4
 
 ---
 
+### [2026-04-27] Phase B: Core Learning Loop Completion
+
+**Roadmap Refs**: §2.3, §2.4, §2.5, §3.1, §4  
+**Status**: Complete  
+
+**What changed**:  
+- **Lesson Caching**: Converted `LessonCache` in `lesson_service.py` from an in-memory dictionary to a `redis.asyncio` distributed cache with 1-hour TTL, aligning with `GET /cache` endpoints in the lessons router.
+- **DB-Driven Prompts**: Replaced the hardcoded `SYSTEM_PROMPT` in `lesson_service.py`. The service now dynamically queries the `prompt_templates` table in Postgres for the `lesson_generation` template, injecting values dynamically.
+- **Prompt Seed Update**: Modified `db_seed_prompt_templates.sql` so the JSON schema matches the exact requirements of the `GeneratedLesson` Pydantic model.
+- **Item Bank Expansion**: Generated `db_seed_items.sql` via a python script, containing 100 new IRT-calibrated items across Math and English (Grades 1-5).
+- **Diagnostic Retry**: Added boilerplate `GET /session/{session_id}` and `POST /session/{session_id}/resume` endpoints in the `diagnostic.py` router to handle in-progress IRT sessions.
+- **Study Plan Auto-Linkage**: Added a Celery background task `refresh_study_plan_task` in `app/api/tasks/plan_tasks.py`. This task fetches a learner's latest diagnostic gaps and automatically generates/saves a new study plan. Hooked this up to fire asynchronously at the end of the `POST /run` diagnostic endpoint.
+
+**Why**:  
+Phase B bridges the gap between static mock generation and a stateful, DB-backed learning loop. Redis ensures API horizontal scalability; Celery ensures heavy LLM plan generation doesn't block the frontend; and DB prompts allow live prompt tuning without code deployments.
+
+**Verified by**:  
+Code changes implemented. Container verification blocked pending background Docker build completion.
+
+**Commit**: pending  
+**Open issues**: Need to verify `eduboost-postgres` seed data insertion once containers are up.
+
+---
+
 *This report will be updated with each completed task. Commit hashes are appended after each push.*

@@ -25,7 +25,17 @@ Respond ONLY with valid JSON matching the lesson schema.',
 - Prior Mastery: {mastery_prior:.0%}
 {gap_instruction}
 
-Return JSON with keys: title, content, activity, vocabulary, summary, learning_objectives (list), estimated_duration_minutes.',
+Return this EXACT JSON structure:
+{
+  "title": "lesson title with SA flavour (max 10 words)",
+  "story_hook": "1-2 sentence SA story opener to engage the learner",
+  "visual_anchor": "ASCII or Unicode diagram illustrating the core concept",
+  "steps": [{"heading": "...", "body": "...", "visual": "...", "sa_example": "..."}],
+  "practice": [{"question": "...", "options": ["..."], "correct": 0, "hint": "...", "feedback": "..."}],
+  "try_it": {"title": "...", "materials": ["..."], "instructions": "..."},
+  "xp": 35,
+  "badge": null
+}',
 TRUE),
 
 -- ============================================================================
@@ -46,7 +56,17 @@ Respond ONLY with valid JSON matching the lesson schema.',
 - Prior Mastery: {mastery_prior:.0%}
 
 Focus: reconnect the learner to Grade {gap_grade} concepts before introducing Grade {grade} content.
-Return JSON with keys: title, content, activity, vocabulary, summary, learning_objectives (list), estimated_duration_minutes.',
+Return this EXACT JSON structure:
+{
+  "title": "lesson title with SA flavour",
+  "story_hook": "1-2 sentence SA story opener",
+  "visual_anchor": "ASCII or Unicode diagram",
+  "steps": [{"heading": "...", "body": "...", "visual": "...", "sa_example": "..."}],
+  "practice": [{"question": "...", "options": ["..."], "correct": 0, "hint": "...", "feedback": "..."}],
+  "try_it": {"title": "...", "materials": ["..."], "instructions": "..."},
+  "xp": 35,
+  "badge": null
+}',
 TRUE),
 
 -- ============================================================================

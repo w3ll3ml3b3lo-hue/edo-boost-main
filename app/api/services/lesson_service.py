@@ -9,7 +9,11 @@ import random
 import time
 from typing import Optional, Tuple
 from pydantic import BaseModel, Field, ValidationError
+import redis.asyncio as redis_async
+from sqlalchemy import text
 
+from app.api.core.config import settings
+from app.api.core.database import AsyncSessionFactory
 from app.api.services.inference_gateway import call_llm, parse_json_response
 import structlog
 
@@ -21,14 +25,13 @@ log = structlog.get_logger()
 # ============================================================================
 
 class LessonCache:
-    """Simple in-memory TTL cache for generated lessons."""
+    """Redis-backed TTL cache for generated lessons."""
     
-    def __init__(self, ttl_seconds: int = 3600, max_entries: int = 1000):
-        self._cache: dict[str, tuple[dict, float]] = {}
+    def __init__(self, redis_url: str, ttl_seconds: int = 3600):
+        self._redis = redis_async.from_url(redis_url, decode_responses=True)
         self._ttl = ttl_seconds
-        self._max_entries = max_entries
     
-    def _generate_key(self, params: LessonParams) -> str:
+    def _generate_key(self, params: "LessonParams") -> str:
         """Generate cache key from lesson parameters."""
         key_data = {
             "grade": params.grade,
@@ -43,52 +46,58 @@ class LessonCache:
             "sa_theme": params.sa_theme,
         }
         key_str = json.dumps(key_data, sort_keys=True)
-        return hashlib.sha256(key_str.encode()).hexdigest()[:32]
+        key_hash = hashlib.sha256(key_str.encode()).hexdigest()[:32]
+        return f"lesson:{key_hash}"
     
-    def get(self, params: LessonParams) -> Optional[GeneratedLesson]:
+    async def get(self, params: "LessonParams") -> Optional["GeneratedLesson"]:
         """Get cached lesson if available and not expired."""
         key = self._generate_key(params)
-        if key in self._cache:
-            lesson_data, cached_at = self._cache[key]
-            if time.time() - cached_at < self._ttl:
-                log.info("lesson_cache.hit", key=key[:8], topic=params.topic)
-                return GeneratedLesson.model_validate(lesson_data)
-            else:
-                # Expired - remove from cache
-                del self._cache[key]
-                log.info("lesson_cache.expired", key=key[:8])
+        try:
+            cached_data = await self._redis.get(key)
+            if cached_data:
+                log.info("lesson_cache.hit", key=key)
+                return GeneratedLesson.model_validate_json(cached_data)
+        except Exception as e:
+            log.warning("lesson_cache.get_error", error=str(e), key=key)
         return None
     
-    def set(self, params: LessonParams, lesson: GeneratedLesson) -> None:
+    async def set(self, params: "LessonParams", lesson: "GeneratedLesson") -> None:
         """Cache a generated lesson."""
-        # Simple eviction: remove oldest if at capacity
-        if len(self._cache) >= self._max_entries:
-            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
-            del self._cache[oldest_key]
-            log.info("lesson_cache.evicted", key=oldest_key[:8])
-        
         key = self._generate_key(params)
-        self._cache[key] = (lesson.model_dump(), time.time())
-        log.info("lesson_cache.stored", key=key[:8], topic=params.topic)
+        try:
+            await self._redis.set(key, lesson.model_dump_json(), ex=self._ttl)
+            log.info("lesson_cache.stored", key=key, topic=params.topic)
+        except Exception as e:
+            log.warning("lesson_cache.set_error", error=str(e), key=key)
     
-    def clear(self) -> int:
+    async def clear(self) -> int:
         """Clear all cached lessons. Returns count of entries cleared."""
-        count = len(self._cache)
-        self._cache.clear()
-        log.info("lesson_cache.cleared", count=count)
-        return count
+        try:
+            keys = await self._redis.keys("lesson:*")
+            if keys:
+                await self._redis.delete(*keys)
+                log.info("lesson_cache.cleared", count=len(keys))
+                return len(keys)
+            return 0
+        except Exception as e:
+            log.warning("lesson_cache.clear_error", error=str(e))
+            return 0
     
-    def stats(self) -> dict:
+    async def stats(self) -> dict:
         """Get cache statistics."""
-        return {
-            "entries": len(self._cache),
-            "max_entries": self._max_entries,
-            "ttl_seconds": self._ttl,
-        }
+        try:
+            keys = await self._redis.keys("lesson:*")
+            return {
+                "entries": len(keys),
+                "ttl_seconds": self._ttl,
+                "status": "connected"
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
 
-# Global cache instance (1 hour TTL, 1000 max entries)
-_lesson_cache = LessonCache(ttl_seconds=3600, max_entries=1000)
+# Global cache instance
+_lesson_cache = LessonCache(redis_url=settings.REDIS_URL, ttl_seconds=3600)
 
 
 def get_lesson_cache() -> LessonCache:
@@ -149,21 +158,7 @@ class GeneratedLesson(BaseModel):
     badge: Optional[str] = None
 
 
-SYSTEM_PROMPT = """You are EduBoost, a warm South African educational assistant for primary school learners (Grade R–7).
-You strictly follow the CAPS (Curriculum and Assessment Policy Statement) curriculum.
-
-RULES:
-1. NEVER include any learner name, ID, email or personal information in responses.
-2. Use authentic South African contexts: rands/cents, braai, ubuntu, spaza shops, SA animals (kudu, springbok, protea), SA cities and townships.
-3. Vocabulary must match the grade level. Grade R-2: very simple, max 8 words/sentence. Grade 3-5: 12 words. Grade 6-7: 15 words.
-4. For VISUAL learners: use ASCII/Unicode diagrams, spatial metaphors, and emoji-rich explanations.
-5. For AUDITORY learners: use rhymes, repetition, and verbal mnemonics.
-6. For KINESTHETIC learners: emphasise hands-on Try It activities.
-7. Always root abstract concepts in concrete, everyday SA examples.
-8. Respond ONLY with valid JSON. No prose outside JSON."""
-
-
-def build_lesson_prompts(params: LessonParams) -> Tuple[str, str]:
+async def build_lesson_prompts(params: LessonParams) -> Tuple[str, str]:
     """Build LLM prompts from anonymised lesson parameters only."""
     grade_name = GRADES.get(params.grade, "Grade 3")
     sa_theme = params.sa_theme or random.choice(SA_THEMES)
@@ -177,56 +172,35 @@ def build_lesson_prompts(params: LessonParams) -> Tuple[str, str]:
             f"Start from {gap_name} fundamentals before progressing to {grade_name} content."
         )
 
-    user_prompt = f"""Generate a complete interactive CAPS lesson. Return ONLY valid JSON.
+    # Fetch templates from DB
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            text("SELECT system_prompt, user_prompt_template FROM prompt_templates WHERE template_type = 'lesson_generation' AND is_active = TRUE LIMIT 1")
+        )
+        row = result.mappings().first()
+    
+    if not row:
+        raise ValueError("Lesson generation prompt template not found in DB")
+        
+    system_prompt = row["system_prompt"]
+    user_prompt_template = row["user_prompt_template"]
 
-LESSON PARAMETERS:
-- Grade: {grade_name}
-- Subject: {params.subject_label}
-- Topic: {params.topic}
-- Home Language: {params.home_language}
-- Primary Learning Style: {style}
-- SA Context Theme: {sa_theme}
-- Prior Mastery Level: {round(params.mastery_prior * 100)}%
-{difficulty_note}
+    # Format the prompt
+    user_prompt = user_prompt_template.format(
+        duration_minutes=15,
+        modality="interactive",
+        grade=grade_name,
+        subject_label=params.subject_label,
+        subject_code=params.subject_code,
+        topic=params.topic,
+        home_language=params.home_language,
+        learning_style_primary=style,
+        sa_theme=sa_theme,
+        mastery_prior=params.mastery_prior,
+        gap_instruction=difficulty_note
+    )
 
-Return this EXACT JSON structure (no extra fields, no markdown):
-{{
-  "title": "lesson title with SA flavour (max 10 words)",
-  "story_hook": "1-2 sentence SA story opener to engage the learner (max 60 words)",
-  "visual_anchor": "ASCII or Unicode diagram illustrating the core concept (use line breaks \\n)",
-  "steps": [
-    {{
-      "heading": "step title",
-      "body": "explanation in simple language (max 80 words)",
-      "visual": "emoji or short diagram for this step",
-      "sa_example": "concrete SA real-world example"
-    }}
-  ],
-  "practice": [
-    {{
-      "question": "question text with SA context",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correct": 0,
-      "hint": "brief hint without giving away the answer",
-      "feedback": "encouraging feedback using SA phrases (Yebo!/Sharp sharp!/Lekker!)"
-    }}
-  ],
-  "try_it": {{
-    "title": "activity title",
-    "materials": ["household item 1", "household item 2"],
-    "instructions": "numbered steps using everyday SA household items (max 80 words)"
-  }},
-  "xp": 35,
-  "badge": "optional badge name if this completes a set (or null)"
-}}
-
-Rules:
-- Include exactly 2 steps
-- Include exactly 3 practice questions
-- Keep language appropriate for {grade_name}
-- All examples must use South African contexts"""
-
-    return SYSTEM_PROMPT, user_prompt
+    return system_prompt, user_prompt
 
 
 async def generate_lesson_from_prompts(system_prompt: str, user_prompt: str) -> GeneratedLesson:
@@ -258,18 +232,18 @@ async def generate_lesson(params: LessonParams) -> GeneratedLesson:
     """
     # Check cache first
     cache = get_lesson_cache()
-    cached_lesson = cache.get(params)
+    cached_lesson = await cache.get(params)
     if cached_lesson is not None:
         return cached_lesson
     
     # Generate new lesson
     grade_name = GRADES.get(params.grade, "Grade 3")
-    system_prompt, user_prompt = build_lesson_prompts(params)
+    system_prompt, user_prompt = await build_lesson_prompts(params)
     log.info("lesson_service.generate", grade=grade_name, subject=params.subject_code, topic=params.topic)
     lesson = await generate_lesson_from_prompts(system_prompt, user_prompt)
     
     # Cache the generated lesson
-    cache.set(params, lesson)
+    await cache.set(params, lesson)
     
     return lesson
 

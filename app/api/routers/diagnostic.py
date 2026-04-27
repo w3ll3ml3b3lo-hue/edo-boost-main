@@ -160,6 +160,10 @@ async def run_diagnostic(request: DiagnosticRequest):
         # For now, we log that the session was persisted
         print(f"Diagnostic session {session_id} persisted for learner {request.learner_id}")
 
+        # Trigger background task to auto-refresh the study plan with new gaps
+        from app.api.tasks.plan_tasks import refresh_study_plan_task
+        refresh_study_plan_task.delay(str(request.learner_id))
+
         return DiagnosticRunResponse(
             success=True,
             gap_report=gap_report,
@@ -249,6 +253,57 @@ async def get_diagnostic_history(learner_id: uuid.UUID):
         })
     
     return {"learner_id": str(learner_id), "sessions": sessions, "count": len(sessions)}
+
+
+@router.get("/session/{session_id}")
+async def get_diagnostic_session(session_id: uuid.UUID):
+    """Retrieve an incomplete or completed diagnostic session's state."""
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            text("SELECT * FROM diagnostic_sessions WHERE session_id = :session_id"),
+            {"session_id": session_id}
+        )
+        row = result.mappings().first()
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorResponse(
+                error="Diagnostic session not found",
+                code="SESSION_NOT_FOUND",
+                details={"session_id": str(session_id)}
+            ).model_dump()
+        )
+        
+    return dict(row)
+
+
+@router.post("/session/{session_id}/resume")
+async def resume_diagnostic_session(session_id: uuid.UUID):
+    """
+    Resume an incomplete diagnostic session.
+    (Full IRT state machine to be hooked up in Phase D)
+    """
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            text("SELECT status FROM diagnostic_sessions WHERE session_id = :session_id"),
+            {"session_id": session_id}
+        )
+        status = result.scalar()
+
+    if not status:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    if status == 'completed':
+        raise HTTPException(status_code=400, detail="Cannot resume a completed session")
+
+    # Boilerplate response until full state-machine is wired
+    return {
+        "success": True,
+        "session_id": str(session_id),
+        "status": status,
+        "message": "Session resumed. Awaiting next item."
+    }
 
 
 # ── Diagnostic Benchmarking Endpoints ─────────────────────────────────────────

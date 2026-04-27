@@ -155,7 +155,8 @@ async def get_cache_stats():
     from app.api.services.lesson_service import get_lesson_cache
     
     cache = get_lesson_cache()
-    return {\"cache\": cache.stats()}
+    stats = await cache.stats()
+    return {"cache": stats}
 
 
 @router.delete("/cache")
@@ -164,7 +165,7 @@ async def clear_cache():
     from app.api.services.lesson_service import get_lesson_cache
     
     cache = get_lesson_cache()
-    count = cache.clear()
+    count = await cache.clear()
     return {"cleared": count, "success": True}
 
 

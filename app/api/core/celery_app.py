@@ -7,6 +7,7 @@ celery_app = Celery(
     "eduboost",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
+    include=["app.api.tasks.plan_tasks"],
 )
 celery_app.conf.update(
     task_serializer="json",
