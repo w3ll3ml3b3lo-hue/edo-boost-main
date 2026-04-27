@@ -60,6 +60,7 @@ export function InteractiveDiagnostic({ learner, onComplete, onBack }) {
       if (res.is_complete) {
         setCompleted(true);
         setGapReport(res.gap_report);
+        refreshState();
       } else {
         setCurrentItem(res.next_item_data || res.next_item);
         setStartTime(Date.now());

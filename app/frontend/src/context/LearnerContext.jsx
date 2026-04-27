@@ -1,19 +1,16 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { LearnerService } from "../lib/api/services";
 
 const LearnerContext = createContext();
 
 export function LearnerProvider({ children }) {
   const [learner, setLearner] = useState(null);
-  const [masteryData, setMasteryData] = useState({
-    MATH: 38,
-    ENG: 62,
-    LIFE: 75,
-    NS: 55,
-    SS: 48,
-  });
+  const [masteryData, setMasteryData] = useState({});
+  const [gamification, setGamification] = useState(null);
   const [badge, setBadge] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // Load learner from localStorage on initial mount
   useEffect(() => {
@@ -25,16 +22,41 @@ export function LearnerProvider({ children }) {
         console.error("Failed to parse saved learner", e);
       }
     }
+    setLoading(false);
   }, []);
 
   // Save learner to localStorage whenever it changes
   useEffect(() => {
     if (learner) {
       localStorage.setItem("eb_active_learner", JSON.stringify(learner));
+      refreshState();
     } else {
       localStorage.removeItem("eb_active_learner");
+      setMasteryData({});
+      setGamification(null);
     }
   }, [learner]);
+
+  const refreshState = async () => {
+    if (!learner?.learner_id) return;
+    try {
+      const [masteryRes, gamificationRes] = await Promise.all([
+        LearnerService.getMastery(learner.learner_id),
+        LearnerService.getGamificationProfile(learner.learner_id),
+      ]);
+
+      if (masteryRes && masteryRes.mastery) {
+        const newMastery = {};
+        masteryRes.mastery.forEach((m) => {
+          newMastery[m.subject_code] = Math.round(m.mastery_score * 100);
+        });
+        setMasteryData(newMastery);
+      }
+      setGamification(gamificationRes);
+    } catch (err) {
+      console.error("Failed to refresh learner state:", err);
+    }
+  };
 
   return (
     <LearnerContext.Provider
@@ -43,8 +65,12 @@ export function LearnerProvider({ children }) {
         setLearner,
         masteryData,
         setMasteryData,
+        gamification,
+        setGamification,
+        refreshState,
         badge,
         setBadge,
+        loading,
       }}
     >
       {children}

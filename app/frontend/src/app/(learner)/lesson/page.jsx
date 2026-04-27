@@ -10,8 +10,10 @@ import { Button } from "../../../components/ui/Button";
 import { LoadingSpinner } from "../../../components/ui/LoadingSpinner";
 import { ErrorMessage } from "../../../components/ui/ErrorMessage";
 
+import InteractiveLesson from "../../../components/eduboost/InteractiveLesson";
+
 export default function LessonPage() {
-  const { learner, setLearner, setBadge } = useLearner();
+  const { learner, setBadge, refreshState } = useLearner();
   const [subject, setSubject] = useState(null);
   const [topic, setTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,13 +59,13 @@ export default function LessonPage() {
         lesson_id: lessonData?.id || null
       });
 
-      setLearner(prev => ({ ...prev, xp: (prev.xp || 0) + xpAmount }));
       setBadge(`You earned ${xpAmount} XP! 🌟`);
+      await refreshState();
       router.push("/dashboard");
     } catch (err) {
       console.error("Award XP error:", err);
-      // Fallback for demo purposes
-      setLearner(prev => ({ ...prev, xp: (prev.xp || 0) + 35 }));
+      setBadge(`Lesson completed! 🌟`);
+      await refreshState();
       router.push("/dashboard");
     } finally {
       setLoading(false);
@@ -72,51 +74,14 @@ export default function LessonPage() {
 
   if (lessonData) {
     return (
-      <div className="max-w-4xl mx-auto p-4 md:p-8 animate-in fade-in duration-500">
-        <Button variant="secondary" onClick={() => setLessonData(null)} className="mb-6">
-          ← Choose Another Topic
-        </Button>
-        
-        <Card className="p-8 md:p-12 border-none bg-white shadow-2xl overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-6 opacity-10 text-8xl">📖</div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <span 
-                className="px-3 py-1 rounded-full text-xs font-bold text-white"
-                style={{ backgroundColor: SUBJECTS.find(s => s.code === subject)?.color }}
-              >
-                {subject}
-              </span>
-              <span className="text-[var(--muted)] text-sm font-medium">Grade {learner.grade} Lesson</span>
-            </div>
-
-            <h1 className="text-4xl font-['Baloo_2'] font-bold text-gray-800 mb-8 leading-tight">
-              {lessonData.title}
-            </h1>
-
-            <div className="prose prose-blue max-w-none mb-12">
-              <p className="text-xl text-gray-600 leading-relaxed italic border-l-4 border-blue-500 pl-6 py-2 bg-blue-50/50 rounded-r-xl">
-                {lessonData.summary || "Get ready to explore this exciting topic together!"}
-              </p>
-              
-              <div className="mt-8 space-y-6 text-gray-700 text-lg leading-relaxed">
-                {/* Simulated lesson content - in real app, we'd render the structured data */}
-                <p>Welcome to your lesson on <strong>{topic}</strong>. Today we are going to learn how this works and why it's important for your Grade {learner.grade} studies.</p>
-                <p>Did you know that {topic} is used every day in South Africa? For example, when you go to the store or talk with your friends, you're using these skills!</p>
-              </div>
-            </div>
-
-            <div className="bg-orange-50 border-2 border-orange-100 p-8 rounded-2xl text-center shadow-inner">
-              <h3 className="text-2xl font-bold text-orange-700 mb-4">Ready to finish?</h3>
-              <p className="text-orange-600 mb-8 font-medium">Complete this lesson to earn 35 XP and boost your level!</p>
-              <Button onClick={handleComplete} disabled={loading} className="px-12 py-4 text-xl shadow-lg shadow-orange-500/30">
-                {loading ? <LoadingSpinner size="sm" /> : "🌟 Finish Lesson & Get XP!"}
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </div>
+      <InteractiveLesson 
+        lesson={lessonData}
+        subject={subject}
+        topic={topic}
+        onBack={() => setLessonData(null)}
+        onComplete={handleComplete}
+        loading={loading}
+      />
     );
   }
 
