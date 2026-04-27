@@ -11,11 +11,11 @@ Transition the frontend from a "stub-heavy" React mockup to a production-grade N
 ## 🏗️ Phase 1: Architectural Integrity (Immediate)
 *Goal: Fix the "plumbing" so links work and identity is consistent.*
 
-- [ ] **Fix Routing Mismatches**:
-    - Update `LearnerLayout` and all `router.push` calls to use standardized, group-agnostic paths (e.g., `/dashboard`, `/lesson`, `/diagnostic`).
-    - Remove hardcoded `/learner/` prefixes from all internal navigation.
-- [ ] **Establish Session Persistence**:
-    - Implement a `useEffect` in `LearnerContext` to sync the learner state with `localStorage` or a Secure Cookie so refreshes don't log the user out.
+- [x] **Fix Routing Mismatches**:
+    - ✅ Updated `LearnerLayout` and all `router.push` calls to use standardized paths
+    - ✅ Removed hardcoded `/learner/` prefixes from all internal navigation
+- [x] **Establish Session Persistence**:
+    - ✅ Implemented `useEffect` in `LearnerContext` to sync with `localStorage`
 - [ ] **API Layer Consolidation**:
     - Deprecate `src/components/eduboost/api.js`.
     - Migrated all calls to `src/lib/api/services.js`.
@@ -62,4 +62,4 @@ Transition the frontend from a "stub-heavy" React mockup to a production-grade N
 1. **Zero 404s** on internal links.
 2. **Zero `PlaceholderPanel`** usages in the `(learner)` group.
 3. **Tests Fail** if the backend API endpoint changes its signature.
-4. **Persistent Session** after a browser refresh.
+4. **Persistent Session** after a browser refresh. ✅

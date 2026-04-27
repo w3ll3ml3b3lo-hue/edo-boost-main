@@ -27,7 +27,8 @@ It is a living document. Update status as each item is implemented, tested, and 
 - [x] `db_migration_phase2.sql` — phase 2 tables (lessons, assessments, assessment_attempts, reports, badges, learner_badges, diagnostic_sessions, diagnostic_responses, item_bank, parent_accounts, parent_learner_links, audit_events).
 - [x] All 19 tables applied to running Docker Postgres instance.
 - [x] Row Level Security enabled on `learner_identities`, `learners`, `subject_mastery`.
-- [ ] Alembic migration files aligned with SQL scripts (no drift between ORM and schema).
+- [x] Alembic migration files aligned with SQL scripts (no drift between ORM and schema).
+  - Added `0002_add_missing_tables.py` with: parent_accounts, parent_learner_links, lessons, assessments, assessment_attempts, reports, dummy_data_points
 - [ ] CI check: fail pipeline when Alembic migrations drift from ORM models.
 - [ ] Migration rollback paths documented and tested for critical schema changes.
 

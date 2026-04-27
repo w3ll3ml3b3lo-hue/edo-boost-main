@@ -40,7 +40,8 @@ This document tracks the full set of 236 actionable items required to move EduBo
 22. [ ] Standardize API error responses.
 23. [ ] Add API versioning rules and document them.
 24. [ ] Remove runtime table creation from application startup.
-25. [ ] Use Alembic as the only database schema migration path.
+25. [x] Use Alembic as the only database schema migration path.
+  - Created `0002_add_missing_tables.py` with all missing tables
 26. [ ] Add migration verification to CI.
 27. [ ] Create rollback instructions for failed migrations.
 28. [ ] Replace blocking SDK usage in async request paths.

@@ -88,7 +88,8 @@ This phase establishes reliable backend behavior, privacy enforcement, durable p
 - [ ] Add a dependency map showing which modules are production-critical.
 - [ ] Standardize API error responses.
 - [ ] Add API versioning rules and document them.
-- [ ] Use Alembic as the only database schema migration path.
+- [x] Use Alembic as the only database schema migration path.
+  - Created `0002_add_missing_tables.py` with all missing tables
 - [ ] Create rollback instructions for failed migrations.
 - [ ] Replace blocking SDK usage in async request paths.
 - [ ] Review all external I/O for correct timeout behavior.

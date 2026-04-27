@@ -131,6 +131,7 @@ Make the backend predictable, validated, maintainable, and resilient under concu
 
 - Stop using runtime table auto-creation in production paths.
 - Adopt Alembic as the only schema evolution mechanism.
+  - ✅ Created `0002_add_missing_tables.py` with all missing tables
 - Add migration checks to CI.
 - Define rollback procedures for failed schema deployments.
 

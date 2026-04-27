@@ -265,6 +265,7 @@ Source: README "Known gaps" + "Database Migrations".
 - ✅ Alembic migration system is set up
 - ✅ Baseline migration file contains CREATE TABLE statements
 - ✅ SQLAlchemy ORM models are defined for core entities
+- ✅ Created `0002_add_missing_tables.py` with all missing tables (parent_accounts, parent_learner_links, lessons, assessments, assessment_attempts, reports, dummy_data_points)
 - ⚠️ Repository docs previously drifted and overstated/understated this area
 - ⚠️ Item bank seeding exists but depth/coverage still needs expansion to reach robust IRT needs (target: 100+ calibrated items per subject/grade)
 
