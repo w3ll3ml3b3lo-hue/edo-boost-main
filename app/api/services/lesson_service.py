@@ -208,7 +208,7 @@ class GeneratedParentReport(BaseModel):
     sections: list[ParentReportSection]
 
 
-async def build_lesson_prompts(params: LessonParams) -> Tuple[str, str]:
+async def build_lesson_prompts(params: LessonParams, prompt_modifier: str | None = None) -> Tuple[str, str]:
     """Build LLM prompts from anonymised lesson parameters only."""
     grade_name = GRADES.get(params.grade, "Grade 3")
     sa_theme = params.sa_theme or random.choice(SA_THEMES)
@@ -255,6 +255,11 @@ async def build_lesson_prompts(params: LessonParams) -> Tuple[str, str]:
 
     system_prompt = row["system_prompt"]
     user_prompt_template = row["user_prompt_template"]
+
+    # Apply optional pedagogical prompt modifier (e.g., Ether profile)
+    if prompt_modifier:
+        # Prefer to append modifier to system prompt so it alters LLM behaviour
+        system_prompt = (system_prompt or "") + "\n" + prompt_modifier
 
     # Format the prompt
     user_prompt = user_prompt_template.format(
@@ -312,6 +317,8 @@ async def generate_lesson(params: LessonParams) -> Tuple[GeneratedLesson, str]:
 
     # Generate new lesson
     grade_name = GRADES.get(params.grade, "Grade 3")
+    # By default no prompt modifier is provided. Callers may pass an Ether
+    # profile modifier by calling `build_lesson_prompts(params, modifier)`
     system_prompt, user_prompt = await build_lesson_prompts(params)
     log.info(
         "lesson_service.generate",

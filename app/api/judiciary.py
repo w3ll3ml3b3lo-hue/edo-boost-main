@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import time
 from typing import Optional
+import hashlib
+import asyncio
+from time import monotonic
+
+from app.api.services.inference_gateway import call_llm
 
 from app.api.constitutional_schema.schema import get_rules_for_action
 from app.api.constitutional_schema.types import (
@@ -41,6 +46,10 @@ class Judiciary:
         self.use_llm_review = use_llm_review
         self._total = 0
         self._rejections = 0
+        # Simple in-memory cache for recent LLM reviews: key -> (status, reasoning, ts)
+        self._llm_cache: dict[str, tuple[str, str, float]] = {}
+        # Cache TTL seconds
+        self._llm_cache_ttl = 30.0
 
     def get_stats(self) -> dict:
         rate = (
@@ -109,7 +118,52 @@ class Judiciary:
                 latency_ms=int((time.perf_counter() - t0) * 1000),
             )
 
+        # Optionally run a fast LLM review for subtle policy checks
         self._total += 1
+        if self.use_llm_review:
+            # Build a short review prompt
+            prompt_text = f"Rules: {rules}\nAction: {action.action_type}\nParams: {action.params}\nSystemPrompt: {system_prompt or ''}\nUserPrompt: {user_prompt or ''}\nIs this action compliant? Reply with 'APPROVED' or 'REJECTED' and a short reasoning."
+            key = hashlib.sha256(prompt_text.encode()).hexdigest()
+
+            # Check cache
+            entry = self._llm_cache.get(key)
+            now_ts = monotonic()
+            if entry and now_ts - entry[2] < self._llm_cache_ttl:
+                status, reasoning, _ = entry
+            else:
+                try:
+                    # Limit tokens small — fast check
+                    resp = await call_llm(
+                        "You are a fast constitutional reviewer.", prompt_text, max_tokens=150
+                    )
+                    clean = resp.strip().upper()
+                    if clean.startswith("REJECT"):
+                        status = StampStatus.REJECTED
+                        reasoning = resp
+                    else:
+                        status = StampStatus.APPROVED
+                        reasoning = resp
+                except Exception as e:
+                    # On LLM failure, fall back to approving (do not block product path)
+                    status = StampStatus.APPROVED
+                    reasoning = f"LLM-review-failed: {e}"
+                # Cache the result
+                try:
+                    self._llm_cache[key] = (status, reasoning, now_ts)
+                except Exception:
+                    pass
+
+            if status == StampStatus.REJECTED:
+                self._rejections += 1
+                return JudiciaryStamp(
+                    action_id=action.action_id,
+                    status=StampStatus.REJECTED,
+                    rules_evaluated=rules,
+                    violations=[],
+                    reasoning=str(reasoning),
+                    latency_ms=int((time.perf_counter() - t0) * 1000),
+                )
+
         return JudiciaryStamp(
             action_id=action.action_id,
             status=StampStatus.APPROVED,
