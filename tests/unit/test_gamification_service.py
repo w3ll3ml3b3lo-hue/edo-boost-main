@@ -7,7 +7,7 @@ and progression mechanics.
 import pytest
 from uuid import uuid4
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.api.services.gamification_service import GamificationService
 from app.api.models.db_models import Learner, LearnerBadge, Badge
@@ -360,3 +360,61 @@ class TestGamificationXPConfig:
             assert "engagement_style" in config
             assert "max_daily_xp" in config
             assert config["max_daily_xp"] > 0
+
+
+class TestGamificationMetrics:
+    """Test metric tracking for gamification events."""
+
+    @pytest.fixture
+    def mock_session(self):
+        """Create a mock async session."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def gamification_service(self, mock_session):
+        """Create a GamificationService instance."""
+        from app.api.services.gamification_service import GamificationService
+        return GamificationService(mock_session)
+
+    @pytest.mark.asyncio
+    @patch("app.api.services.gamification_service.XP_AWARDED_TOTAL")
+    async def test_xp_awarded_metric(self, mock_xp_metric, gamification_service, mock_session):
+        """Test that XP_AWARDED_TOTAL is incremented when XP is awarded."""
+        learner_id = uuid4()
+        learner = MagicMock(spec=Learner)
+        learner.learner_id = learner_id
+        learner.grade = 3
+        learner.total_xp = 100
+        learner.streak_days = 0
+
+        mock_session.get.return_value = learner
+        mock_session.execute = AsyncMock()
+        mock_session.execute.return_value.all.return_value = []
+
+        await gamification_service.award_xp(
+            learner_id=learner_id,
+            xp_type="lesson_complete",
+        )
+
+        assert mock_xp_metric.labels.called
+        assert mock_xp_metric.labels.return_value.inc.called
+        mock_xp_metric.labels.assert_called_with(xp_type="lesson_complete")
+        mock_xp_metric.labels.return_value.inc.assert_called_with(35)
+
+    @pytest.mark.asyncio
+    @patch("app.api.services.gamification_service.BADGE_AWARDED_TOTAL")
+    async def test_badge_awarded_metric(self, mock_badge_metric, gamification_service, mock_session):
+        """Test that BADGE_AWARDED_TOTAL is incremented when a badge is awarded."""
+        learner_id = uuid4()
+        badge = MagicMock(spec=Badge)
+        badge.badge_id = uuid4()
+        badge.badge_key = "milestone_10_lessons"
+        badge.badge_type = "milestone"
+        badge.name = "10 Lessons"
+        badge.description = "Completed 10 lessons"
+
+        await gamification_service._award_existing_badge(learner_id, badge)
+
+        assert mock_badge_metric.labels.called
+        assert mock_badge_metric.labels.return_value.inc.called
+        mock_badge_metric.labels.assert_called_with(badge_type="milestone")
