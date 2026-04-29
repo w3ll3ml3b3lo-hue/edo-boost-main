@@ -15,6 +15,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+ 
+# For patching in tests
+JudiciaryClient = None
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +117,7 @@ class WorkerAgent(ABC):
         Submit action to JudiciaryService and block until a stamp is returned.
         Raises UnauthorizedExecutionError if verdict is REJECTED or stamp is invalid.
         """
-        from app.api.judiciary_client import JudiciaryClient  # lazy import to avoid cycles
+        from .client import JudiciaryClient  # lazy import to avoid cycles
 
         # Verify HMAC integrity before sending
         if self._encryption_key and not action.verify_signature(self._encryption_key):

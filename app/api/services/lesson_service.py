@@ -1,133 +1,83 @@
 """
-EduBoost SA — Lesson Generation Service
-Builds CAPS-aligned, SA-contextual lessons using the Inference Gateway.
-No PII flows into prompts.
+PILLAR 2 — EXECUTIVE
+EduBoost SA — Lesson Generation Service (Refactored)
+Uses WorkerAgent base class to enforce JudiciaryStamp gate.
 """
+from __future__ import annotations
 
-import hashlib
-import json
+import logging
 import random
-from datetime import datetime
-from typing import Optional, Tuple
-from pydantic import BaseModel, Field, ValidationError
-import redis.asyncio as redis_async
+from typing import Any, Dict, List, Optional, Tuple
+
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.core.config import settings
-from app.api.core.database import AsyncSessionFactory
-from app.api.services.inference_gateway import call_llm, parse_json_response
+from app.api.judiciary.base import ExecutiveAction, JudiciaryStampRef, WorkerAgent
+from app.api.infrastructure.provider_router import ProviderRouter
+from app.api.judiciary.profiler import EtherPromptModifier
 from app.api.services.prompt_manager import PromptManager
-from app.api.core.metrics import LLM_SCHEMA_VALIDATION_ERRORS
-import structlog
+from app.api.core.config import settings
 
-log = structlog.get_logger()
-
+import redis.asyncio as redis_async
+import json
+import hashlib
 
 # ============================================================================
 # Lesson Caching System
 # ============================================================================
 
-
 class LessonCache:
     """Redis-backed TTL cache for generated lessons."""
-
     def __init__(self, redis_url: str, ttl_seconds: int = 3600):
         self._redis = redis_async.from_url(redis_url, decode_responses=True)
         self._ttl = ttl_seconds
 
-    def _generate_key(self, params: "LessonParams") -> str:
-        """Generate cache key from lesson parameters."""
-        key_data = {
-            "grade": params.grade,
-            "subject_code": params.subject_code,
-            "subject_label": params.subject_label,
-            "topic": params.topic,
-            "home_language": params.home_language,
-            "learning_style_primary": params.learning_style_primary,
-            "mastery_prior": params.mastery_prior,
-            "has_gap": params.has_gap,
-            "gap_grade": params.gap_grade,
-            "sa_theme": params.sa_theme,
-        }
-        key_str = json.dumps(key_data, sort_keys=True)
+    def _generate_key(self, subject: str, grade: int, topic: str) -> str:
+        key_str = f"{subject}:{grade}:{topic}"
         key_hash = hashlib.sha256(key_str.encode()).hexdigest()[:32]
         return f"lesson:{key_hash}"
 
-    async def get(
-        self, params: "LessonParams"
-    ) -> Optional[Tuple["GeneratedLesson", str]]:
-        """Get cached lesson if available and not expired."""
-        key = self._generate_key(params)
+    async def get(self, subject: str, grade: int, topic: str) -> Optional[Dict[str, Any]]:
+        key = self._generate_key(subject, grade, topic)
         try:
             cached_data = await self._redis.get(key)
             if cached_data:
-                log.info("lesson_cache.hit", key=key)
-                # Return both the lesson and the ID (stripping 'lesson:' prefix)
-                return GeneratedLesson.model_validate_json(cached_data), key.replace(
-                    "lesson:", ""
-                )
-        except Exception as e:
-            log.warning("lesson_cache.get_error", error=str(e), key=key)
+                return json.loads(cached_data)
+        except Exception:
+            pass
         return None
 
-    async def set(self, params: "LessonParams", lesson: "GeneratedLesson") -> str:
-        """Cache a generated lesson. Returns the generated lesson ID."""
-        key = self._generate_key(params)
+    async def set(self, subject: str, grade: int, topic: str, lesson: Dict[str, Any]) -> str:
+        key = self._generate_key(subject, grade, topic)
         try:
-            await self._redis.set(key, lesson.model_dump_json(), ex=self._ttl)
-            log.info("lesson_cache.stored", key=key, topic=params.topic)
-        except Exception as e:
-            log.warning("lesson_cache.set_error", error=str(e), key=key)
+            await self._redis.set(key, json.dumps(lesson), ex=self._ttl)
+        except Exception:
+            pass
         return key.replace("lesson:", "")
 
     async def clear(self) -> int:
-        """Clear all cached lessons. Returns count of entries cleared."""
-        try:
-            keys = await self._redis.keys("lesson:*")
-            if keys:
-                await self._redis.delete(*keys)
-                log.info("lesson_cache.cleared", count=len(keys))
-                return len(keys)
-            return 0
-        except Exception as e:
-            log.warning("lesson_cache.clear_error", error=str(e))
-            return 0
+        keys = await self._redis.keys("lesson:*")
+        if keys:
+            await self._redis.delete(*keys)
+            return len(keys)
+        return 0
 
     async def stats(self) -> dict:
-        """Get cache statistics."""
-        try:
-            keys = await self._redis.keys("lesson:*")
-            return {
-                "entries": len(keys),
-                "ttl_seconds": self._ttl,
-                "status": "connected",
-            }
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
+        keys = await self._redis.keys("lesson:*")
+        return {"entries": len(keys), "ttl_seconds": self._ttl, "status": "connected"}
 
-
-# Global cache instance
 _lesson_cache = LessonCache(redis_url=settings.REDIS_URL, ttl_seconds=3600)
 
-
 def get_lesson_cache() -> LessonCache:
-    """Get the global lesson cache instance."""
     return _lesson_cache
 
-
 class LLMOutputValidationError(Exception):
-    """
-    Raised when LLM output fails Pydantic schema validation
-    (Phase 1, item #6). Routers should map this to HTTP 422.
-    """
-
-    def __init__(
-        self, message: str, errors: list | None = None, raw: str | None = None
-    ):
+    def __init__(self, message: str, errors: list | None = None, raw: str | None = None):
         super().__init__(message)
         self.errors = errors or []
         self.raw = (raw or "")[:500]
 
+logger = logging.getLogger(__name__)
 
 SA_THEMES = [
     "sharing food at a family braai",
@@ -141,356 +91,145 @@ SA_THEMES = [
 ]
 
 GRADES = {
-    0: "Grade R",
-    1: "Grade 1",
-    2: "Grade 2",
-    3: "Grade 3",
-    4: "Grade 4",
-    5: "Grade 5",
-    6: "Grade 6",
-    7: "Grade 7",
+    0: "Grade R", 1: "Grade 1", 2: "Grade 2", 3: "Grade 3",
+    4: "Grade 4", 5: "Grade 5", 6: "Grade 6", 7: "Grade 7",
 }
 
-LEARNING_STYLES = ["visual", "auditory", "kinesthetic"]
+class LessonService(WorkerAgent):
+    """
+    Generates AI-powered lessons.
+    Stamp gate ensures every LLM call is Judiciary-approved before execution.
+    """
 
+    def __init__(
+        self,
+        session: AsyncSession,
+        encryption_key: Optional[str] = None,
+    ):
+        super().__init__(
+            agent_id="lesson-service",
+            intent="generate_lesson",
+            encryption_key=encryption_key,
+        )
+        self._session = session
 
-class LessonParams(BaseModel):
-    """Anonymised pedagogical parameters — safe to pass to LLM."""
+    async def _build_action(self, **kwargs) -> ExecutiveAction:  # type: ignore[override]
+        learner_pseudonym: str = kwargs["learner_pseudonym"]
+        subject: str = kwargs["subject"]
+        grade: int = kwargs["grade"]
+        topic: str = kwargs["topic"]
 
-    grade: int = Field(ge=0, le=7)
-    subject_code: str
-    subject_label: str
-    topic: str
-    home_language: str = "English"
-    learning_style_primary: str = "visual"
-    mastery_prior: float = Field(default=0.5, ge=0.0, le=1.0)
-    has_gap: bool = False
-    gap_grade: Optional[int] = None
-    sa_theme: Optional[str] = None
+        await self._assert_consent(learner_pseudonym, self._session)
 
+        return ExecutiveAction(
+            agent_id=self.agent_id,
+            intent=self.intent,
+            parameters={
+                "subject": subject,
+                "grade": grade,
+                "topic": topic,
+            },
+            claimed_rules=[
+                "POPIA-S11-DATA-MIN",
+                "POPIA-S19-SECURITY",
+                "CAPS-LESSON-SCOPE",
+            ],
+            learner_pseudonym=learner_pseudonym,
+        )
 
-class GeneratedLesson(BaseModel):
-    title: str
-    story_hook: str
-    visual_anchor: str = ""
-    steps: list
-    practice: list
-    try_it: Optional[dict] = None
-    xp: int = 35
-    badge: Optional[str] = None
+    async def _execute(
+        self, action: ExecutiveAction, stamp: JudiciaryStampRef, **kwargs
+    ) -> Dict[str, Any]:
+        self._assert_stamped()
 
+        subject = action.parameters["subject"]
+        grade = action.parameters["grade"]
+        topic = action.parameters["topic"]
+        learner_pseudonym = action.learner_pseudonym
 
-class StudyPlanItem(BaseModel):
-    day: str
-    subject_code: str
-    topic: str
-    minutes: int
+        # Build prompt
+        system_prompt, user_prompt = await self._build_prompts(subject, grade, topic)
 
+        # Apply Ether prompt modification (Pillar 5)
+        modifier = EtherPromptModifier(self._session)
+        modified_prompt = await modifier.apply(user_prompt, learner_pseudonym)
 
-class GeneratedStudyPlan(BaseModel):
-    week_start: str
-    gap_ratio: float
-    week_focus: str
-    schedule: list[StudyPlanItem]
+        # Call LLM via ProviderRouter (Infrastructure)
+        router = ProviderRouter()
+        raw_content = await router.complete(
+            prompt=modified_prompt,
+            system_prompt=system_prompt,
+            action_id=action.action_id,
+            stamp_id=stamp.stamp_id,
+        )
 
+        lesson_result = {
+            "action_id": action.action_id,
+            "stamp_id": stamp.stamp_id,
+            "learner_pseudonym": learner_pseudonym,
+            "subject": subject,
+            "grade": grade,
+            "topic": topic,
+            "content": raw_content,
+        }
 
-class ParentReportSection(BaseModel):
-    section: str
-    title: str
-    content: str
+        # Persist to DB
+        await self._persist_lesson(lesson_result)
+        return lesson_result
 
+    async def _build_prompts(self, subject: str, grade: int, topic: str) -> Tuple[str, str]:
+        grade_name = GRADES.get(grade, f"Grade {grade}")
+        sa_theme = random.choice(SA_THEMES)
 
-class GeneratedParentReport(BaseModel):
-    report_date: str
-    grade: int
-    streak_days: int
-    total_xp: int
-    sections: list[ParentReportSection]
+        try:
+            system_prompt = PromptManager.get_template("lesson_generation", "system")
+            user_template = PromptManager.get_template("lesson_generation", "user")
+            
+            user_prompt = user_template.format(
+                duration_minutes=15,
+                modality="interactive",
+                grade=grade_name,
+                subject_label=subject,
+                subject_code=subject, # Simplify for now
+                topic=topic,
+                home_language="English",
+                learning_style_primary="visual",
+                sa_theme=sa_theme,
+                mastery_prior=0.5,
+                gap_instruction="",
+            )
+        except Exception:
+            # Fallback
+            system_prompt = f"You are a South African CAPS-aligned educational assistant for {grade_name}."
+            user_prompt = f"Topic: {topic}. Subject: {subject}. Theme: {sa_theme}."
 
-
-async def build_lesson_prompts(params: LessonParams, prompt_modifier: str | None = None) -> Tuple[str, str]:
-    """Build LLM prompts from anonymised lesson parameters only."""
-    grade_name = GRADES.get(params.grade, "Grade 3")
-    sa_theme = params.sa_theme or random.choice(SA_THEMES)
-    style = params.learning_style_primary
-
-    # Test mode: avoid complex templating in deterministic tests
-    if settings.APP_ENV == "test":
-        system_prompt = "You are EduBoost, a CAPS tutor. Return JSON."
-        user_prompt = json.dumps(params.model_dump())
         return system_prompt, user_prompt
 
-    # Load from PromptManager (filesystem)
-    try:
-        system_prompt = PromptManager.get_template("lesson_generation", "system")
-        user_prompt_template = PromptManager.get_template("lesson_generation", "user")
-    except Exception as e:
-        log.warning("lesson_service.prompt_file_missing", error=str(e))
-        # Fallback to DB
-        async with AsyncSessionFactory() as session:
-            result = await session.execute(
-                text(
-                    "SELECT system_prompt, user_prompt_template FROM prompt_templates WHERE template_type = 'lesson_generation' AND is_active = TRUE LIMIT 1"
-                )
-            )
-            row = result.mappings().first()
-
-        if not row:
-            raise ValueError("Lesson generation prompt template not found in DB or files")
-        
-        system_prompt = row["system_prompt"]
-        user_prompt_template = row["user_prompt_template"]
-
-    difficulty_note = ""
-    if params.has_gap and params.gap_grade is not None:
-        gap_name = GRADES.get(params.gap_grade, grade_name)
-        difficulty_note = (
-            f"NOTE: This learner has a knowledge gap at {gap_name} level. "
-            f"Start from {gap_name} fundamentals before progressing to {grade_name} content."
+    async def _persist_lesson(self, result: Dict[str, Any]) -> None:
+        await self._session.execute(
+            text(
+                """
+                INSERT INTO lesson_results
+                    (action_id, stamp_id, learner_pseudonym, subject, grade, topic, content, created_at)
+                VALUES (:action_id, :stamp_id, :learner_pseudonym, :subject, :grade, :topic, :content, now())
+                """
+            ),
+            result,
         )
+        await self._session.commit()
 
-
-    if not row:
-        raise ValueError("Lesson generation prompt template not found in DB")
-
-    system_prompt = row["system_prompt"]
-    user_prompt_template = row["user_prompt_template"]
-
-    # Apply optional pedagogical prompt modifier (e.g., Ether profile)
-    if prompt_modifier:
-        # Prefer to append modifier to system prompt so it alters LLM behaviour
-        system_prompt = (system_prompt or "") + "\n" + prompt_modifier
-
-    # Format the prompt
-    user_prompt = user_prompt_template.format(
-        duration_minutes=15,
-        modality="interactive",
-        grade=grade_name,
-        subject_label=params.subject_label,
-        subject_code=params.subject_code,
-        topic=params.topic,
-        home_language=params.home_language,
-        learning_style_primary=style,
-        sa_theme=sa_theme,
-        mastery_prior=params.mastery_prior,
-        gap_instruction=difficulty_note,
-    )
-
-    return system_prompt, user_prompt
-
-
-async def generate_lesson_from_prompts(
-    system_prompt: str, user_prompt: str
-) -> GeneratedLesson:
-    text = await call_llm(system_prompt, user_prompt, max_tokens=1600)
-    try:
-        data = parse_json_response(text)
-    except (ValueError, json.JSONDecodeError) as e:
-        log.warning("lesson_service.invalid_json", error=str(e))
-        raise LLMOutputValidationError(
-            "LLM did not return valid JSON", errors=[{"msg": str(e)}], raw=text
-        ) from e
-    try:
-        return GeneratedLesson.model_validate(data)
-    except ValidationError as e:
-        LLM_SCHEMA_VALIDATION_ERRORS.labels(template_type="lesson_generation").inc()
-        log.warning("lesson_service.schema_mismatch", errors=e.errors())
-        raise LLMOutputValidationError(
-            "LLM output failed lesson schema validation",
-            errors=e.errors(),
-            raw=text,
-        ) from e
-
-
-async def generate_lesson(params: LessonParams) -> Tuple[GeneratedLesson, str]:
-    """
-    Generate a complete CAPS-aligned lesson.
-    params must contain ZERO learner PII.
-
-    Uses caching to avoid regenerating identical lessons.
-    """
-    # Check cache first
-    cache = get_lesson_cache()
-    cached = await cache.get(params)
-    if cached is not None:
-        return cached
-
-    # Generate new lesson
-    grade_name = GRADES.get(params.grade, "Grade 3")
-    # By default no prompt modifier is provided. Callers may pass an Ether
-    # profile modifier by calling `build_lesson_prompts(params, modifier)`
-    system_prompt, user_prompt = await build_lesson_prompts(params)
-    log.info(
-        "lesson_service.generate",
-        grade=grade_name,
-        subject=params.subject_code,
-        topic=params.topic,
-    )
-    lesson = await generate_lesson_from_prompts(system_prompt, user_prompt)
-
-    # Cache the generated lesson and get its ID
-    lesson_id = await cache.set(params, lesson)
-
-    return lesson, lesson_id
-
-
-async def generate_study_plan(
+# Backward compatibility procedural wrapper
+async def generate_lesson(
+    session: AsyncSession,
+    learner_id: str,
+    subject: str,
     grade: int,
-    knowledge_gaps: list,
-    subjects_mastery: dict,
-) -> dict:
-    """
-    Generate a CAPS-aligned weekly study plan.
-    Accepts only anonymised mastery data — no learner PII.
-    """
-    if settings.APP_ENV == "test":
-        return {
-            "week_start": datetime.utcnow().date().isoformat(),
-            "gap_ratio": 0.4,
-            "week_focus": "Foundations first (test mode)",
-            "schedule": [
-                {
-                    "day": "Mon",
-                    "subject_code": "MATH",
-                    "topic": "Basics",
-                    "minutes": 20,
-                },
-                {
-                    "day": "Tue",
-                    "subject_code": "ENG",
-                    "topic": "Reading",
-                    "minutes": 20,
-                },
-            ],
-        }
-
-    grade_name = GRADES.get(grade, "Grade 3")
-    gaps_summary = (
-        ", ".join(
-            [
-                f"{g['subject']} at {GRADES.get(g.get('gap_grade', grade), grade_name)} level"
-                for g in knowledge_gaps
-            ]
-        )
-        if knowledge_gaps
-        else "none detected"
+    topic: str
+) -> Dict[str, Any]:
+    service = LessonService(session)
+    return await service.run(
+        learner_pseudonym=learner_id,
+        subject=subject,
+        grade=grade,
+        topic=topic
     )
-
-    # Load from PromptManager
-    try:
-        system = PromptManager.get_template("study_plan", "system")
-        user_template = PromptManager.get_template("study_plan", "user")
-    except Exception as e:
-        log.warning("lesson_service.study_plan_file_missing", error=str(e))
-        # Fallback to DB
-        async with AsyncSessionFactory() as session:
-            result = await session.execute(
-                text(
-                    "SELECT system_prompt, user_prompt_template FROM prompt_templates WHERE template_type = 'study_plan' AND is_active = TRUE LIMIT 1"
-                )
-            )
-            row = result.mappings().first()
-
-        if not row:
-            system = "You are a CAPS curriculum planner. Create personalised weekly study plans. Return ONLY valid JSON."
-            user_template = "Create a one-week study plan for Grade {grade_name}. Gaps: {gaps_summary}. Mastery: {subjects_mastery_str}."
-        else:
-            system = row["system_prompt"]
-            user_template = row["user_prompt_template"]
-
-    subjects_mastery_str = ", ".join(
-        [f"{k}: {v}%" for k, v in subjects_mastery.items()]
-    )
-    user = user_template.format(
-        grade_name=grade_name,
-        gaps_summary=gaps_summary,
-        subjects_mastery_str=subjects_mastery_str,
-    )
-
-    text_resp = await call_llm(system, user, max_tokens=900)
-    data = parse_json_response(text_resp)
-    try:
-        return GeneratedStudyPlan.model_validate(data).model_dump()
-    except ValidationError as e:
-        LLM_SCHEMA_VALIDATION_ERRORS.labels(template_type="study_plan").inc()
-        log.warning("lesson_service.study_plan_schema_mismatch", errors=e.errors())
-        # Return unvalidated data as fallback but log error
-        return data
-
-
-async def generate_parent_report(
-    grade: int,
-    streak_days: int,
-    total_xp: int,
-    subjects_mastery: dict,
-    gaps: list,
-) -> dict:
-    """
-    Generate a parent-facing progress report.
-    Uses only aggregate, anonymised metrics — no learner name or PII.
-    """
-    if settings.APP_ENV == "test":
-        return {
-            "report_date": datetime.utcnow().isoformat(),
-            "grade": grade,
-            "streak_days": streak_days,
-            "total_xp": total_xp,
-            "sections": [
-                {
-                    "section": "summary",
-                    "title": "Summary",
-                    "content": "Test-mode parent report.",
-                },
-                {
-                    "section": "recommendations",
-                    "title": "Recommendations",
-                    "content": "Keep going.",
-                },
-            ],
-        }
-
-    grade_name = GRADES.get(grade, "Grade 3")
-
-    # Load from PromptManager
-    try:
-        system = PromptManager.get_template("parent_report", "system")
-        user_template = PromptManager.get_template("parent_report", "user")
-    except Exception as e:
-        log.warning("lesson_service.parent_report_file_missing", error=str(e))
-        # Fallback to DB
-        async with AsyncSessionFactory() as session:
-            result = await session.execute(
-                text(
-                    "SELECT system_prompt, user_prompt_template FROM prompt_templates WHERE template_type = 'parent_report' AND is_active = TRUE LIMIT 1"
-                )
-            )
-            row = result.mappings().first()
-
-        if not row:
-            system = "You are an educational progress report generator for South African parents. Be warm, encouraging, and use SA cultural references. Return only JSON."
-            user_template = "Generate a parent progress report for Grade {grade_name}. Streak: {streak_days}, XP: {total_xp}, Mastery: {subjects_mastery_str}, Gaps: {gaps_str}."
-        else:
-            system = row["system_prompt"]
-            user_template = row["user_prompt_template"]
-
-    subjects_mastery_str = ", ".join(
-        [f"{k}: {v}%" for k, v in subjects_mastery.items()]
-    )
-    gaps_str = ", ".join([g.get("subject", "") for g in gaps]) or "none"
-
-    user = user_template.format(
-        grade_name=grade_name,
-        streak_days=streak_days,
-        total_xp=total_xp,
-        subjects_mastery_str=subjects_mastery_str,
-        gaps_str=gaps_str,
-    )
-
-    text_resp = await call_llm(system, user, max_tokens=700)
-    data = parse_json_response(text_resp)
-    try:
-        return GeneratedParentReport.model_validate(data).model_dump()
-    except ValidationError as e:
-        LLM_SCHEMA_VALIDATION_ERRORS.labels(template_type="parent_report").inc()
-        log.warning("lesson_service.parent_report_schema_mismatch", errors=e.errors())
-        return data

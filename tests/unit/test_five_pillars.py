@@ -28,7 +28,7 @@ from sqlalchemy.orm import sessionmaker
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def valid_rule():
-    from eduboost.pillar_1_legislature.models import ConstitutionalRule, ScopeModel
+    from app.api.judiciary.models import ConstitutionalRule, ScopeModel
     return ConstitutionalRule(
         rule_id="POPIA-S11-DATA-MIN",
         source_document="Protection of Personal Information Act (4/2013)",
@@ -40,7 +40,7 @@ def valid_rule():
 
 @pytest.fixture
 def sample_action():
-    from eduboost.pillar_2_executive.base import ExecutiveAction
+    from app.api.judiciary.base import ExecutiveAction
     return ExecutiveAction(
         agent_id="lesson-service",
         intent="generate_lesson",
@@ -59,7 +59,7 @@ class TestConstitutionalRuleImmutability:
         assert len(valid_rule.immutable_hash) == 64
 
     def test_hash_is_deterministic(self, valid_rule):
-        from eduboost.pillar_1_legislature.models import ConstitutionalRule, ScopeModel
+        from app.api.judiciary.models import ConstitutionalRule, ScopeModel
         rule2 = ConstitutionalRule(
             rule_id=valid_rule.rule_id,
             source_document=valid_rule.source_document,
@@ -77,7 +77,7 @@ class TestConstitutionalRuleImmutability:
             valid_rule.rule_text = "tampered"
 
     def test_different_text_produces_different_hash(self, valid_rule):
-        from eduboost.pillar_1_legislature.models import ConstitutionalRule, ScopeModel
+        from app.api.judiciary.models import ConstitutionalRule, ScopeModel
         tampered = ConstitutionalRule(
             rule_id=valid_rule.rule_id,
             source_document=valid_rule.source_document,
@@ -88,19 +88,13 @@ class TestConstitutionalRuleImmutability:
         assert tampered.immutable_hash != valid_rule.immutable_hash
 
     def test_orm_update_event_raises(self):
-        from eduboost.pillar_1_legislature.models import ConstitutionalRuleORM
+        from app.api.judiciary.models import ConstitutionalRuleORM, _block_update
         orm = ConstitutionalRuleORM()
         with pytest.raises(RuntimeError, match="immutable"):
-            from sqlalchemy import event
-            # Simulate SQLAlchemy before_update event
-            for fn in [l for l in event.Events._key_to_collection.get("before_update", [])]:
-                pass
-            # Directly call the listener
-            from eduboost.pillar_1_legislature.models import _block_update
             _block_update(None, None, orm)
 
     def test_orm_delete_event_raises(self):
-        from eduboost.pillar_1_legislature.models import _block_delete, ConstitutionalRuleORM
+        from app.api.judiciary.models import _block_delete, ConstitutionalRuleORM
         with pytest.raises(RuntimeError, match="cannot be deleted"):
             _block_delete(None, None, ConstitutionalRuleORM())
 
@@ -110,7 +104,7 @@ class TestConstitutionalRuleImmutability:
 # ============================================================================
 class TestPIIScrubber:
     def _scrub(self, text_: str):
-        from eduboost.popia.compliance import scrub_pii
+        from app.api.judiciary.compliance import scrub_pii
         return scrub_pii(text_)
 
     def test_clean_text_passes(self):
@@ -134,12 +128,12 @@ class TestPIIScrubber:
         assert "SA_MOBILE_NUMBER" in result.violations
 
     def test_assert_pii_clean_raises_on_pii(self):
-        from eduboost.popia.compliance import assert_pii_clean
+        from app.api.judiciary.compliance import assert_pii_clean
         with pytest.raises(ValueError, match="PII detected"):
             assert_pii_clean("Email: parent@example.co.za", context="test")
 
     def test_assert_pii_clean_passes_clean_text(self):
-        from eduboost.popia.compliance import assert_pii_clean
+        from app.api.judiciary.compliance import assert_pii_clean
         assert_pii_clean("Grade 5 Mathematics: Introduction to Fractions")
 
     def test_multiple_pii_types_detected(self):
@@ -154,7 +148,7 @@ class TestPIIScrubber:
 class TestWorkerAgentStampGate:
     @pytest.mark.asyncio
     async def test_approved_stamp_unblocks_execution(self, sample_action):
-        from eduboost.pillar_2_executive.base import JudiciaryStampRef, WorkerAgent
+        from app.api.judiciary.base import JudiciaryStampRef, WorkerAgent
 
         class _ConcreteWorker(WorkerAgent):
             def __init__(self):
@@ -176,7 +170,7 @@ class TestWorkerAgentStampGate:
         )
 
         worker = _ConcreteWorker()
-        with patch("eduboost.pillar_2_executive.base.JudiciaryClient") as MockClient:
+        with patch("app.api.judiciary.client.JudiciaryClient") as MockClient:
             instance = AsyncMock()
             instance.review = AsyncMock(return_value=mock_stamp)
             MockClient.return_value = instance
@@ -187,7 +181,7 @@ class TestWorkerAgentStampGate:
 
     @pytest.mark.asyncio
     async def test_rejected_stamp_raises_unauthorized(self, sample_action):
-        from eduboost.pillar_2_executive.base import (
+        from app.api.judiciary.base import (
             JudiciaryStampRef, UnauthorizedExecutionError, WorkerAgent
         )
 
@@ -209,7 +203,7 @@ class TestWorkerAgentStampGate:
         )
 
         worker = _ConcreteWorker()
-        with patch("eduboost.pillar_2_executive.base.JudiciaryClient") as MockClient:
+        with patch("app.api.judiciary.client.JudiciaryClient") as MockClient:
             instance = AsyncMock()
             instance.review = AsyncMock(return_value=mock_stamp)
             MockClient.return_value = instance
@@ -218,7 +212,7 @@ class TestWorkerAgentStampGate:
 
     @pytest.mark.asyncio
     async def test_assert_stamped_raises_without_prior_stamp(self):
-        from eduboost.pillar_2_executive.base import UnauthorizedExecutionError, WorkerAgent
+        from app.api.judiciary.base import UnauthorizedExecutionError, WorkerAgent
 
         class _BadWorker(WorkerAgent):
             def __init__(self):
@@ -239,7 +233,7 @@ class TestWorkerAgentStampGate:
 
     @pytest.mark.asyncio
     async def test_hmac_signature_verification(self, sample_action):
-        from eduboost.pillar_2_executive.base import ExecutiveAction
+        from app.api.judiciary.base import ExecutiveAction
         key = "test-secret-key"
         signed = sample_action.sign(key)
         assert signed.signature != ""
@@ -258,7 +252,7 @@ class TestWorkerAgentStampGate:
 # ============================================================================
 class TestJudiciaryFastPath:
     def _make_action(self, params=None, learner_pseudonym="PSEUDO-XYZ"):
-        from eduboost.pillar_3_judiciary.models import ExecutiveActionIn
+        from app.api.judiciary.models import ExecutiveActionIn
         from datetime import datetime, timezone
         return ExecutiveActionIn(
             action_id=str(uuid.uuid4()),
@@ -272,7 +266,7 @@ class TestJudiciaryFastPath:
 
     @pytest.mark.asyncio
     async def test_sa_id_number_triggers_fast_rejection(self):
-        from eduboost.pillar_3_judiciary.service import JudiciaryService
+        from app.api.judiciary.service import JudiciaryService
         action = self._make_action(params={"data": "9001015800089"})
         service = JudiciaryService(session=MagicMock())
         result = await service._fast_path_check(action)
@@ -281,7 +275,7 @@ class TestJudiciaryFastPath:
 
     @pytest.mark.asyncio
     async def test_email_in_params_triggers_fast_rejection(self):
-        from eduboost.pillar_3_judiciary.service import JudiciaryService
+        from app.api.judiciary.service import JudiciaryService
         action = self._make_action(params={"contact": "parent@example.co.za"})
         service = JudiciaryService(session=MagicMock())
         result = await service._fast_path_check(action)
@@ -289,7 +283,7 @@ class TestJudiciaryFastPath:
 
     @pytest.mark.asyncio
     async def test_clean_action_passes_fast_path(self):
-        from eduboost.pillar_3_judiciary.service import JudiciaryService
+        from app.api.judiciary.service import JudiciaryService
         action = self._make_action(params={"subject": "Maths", "grade": 5})
         service = JudiciaryService(session=MagicMock())
         result = await service._fast_path_check(action)
@@ -302,7 +296,7 @@ class TestJudiciaryFastPath:
 class TestConsentGate:
     @pytest.mark.asyncio
     async def test_active_consent_passes(self):
-        from eduboost.popia.compliance import ConsentGate
+        from app.api.judiciary.compliance import ConsentGate
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
             return_value=MagicMock(first=MagicMock(return_value=("ACTIVE",)))
@@ -312,7 +306,7 @@ class TestConsentGate:
 
     @pytest.mark.asyncio
     async def test_no_consent_raises_permission_error(self):
-        from eduboost.popia.compliance import ConsentGate
+        from app.api.judiciary.compliance import ConsentGate
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
             return_value=MagicMock(first=MagicMock(return_value=None))
@@ -323,7 +317,7 @@ class TestConsentGate:
 
     @pytest.mark.asyncio
     async def test_revoked_consent_raises_permission_error(self):
-        from eduboost.popia.compliance import ConsentGate
+        from app.api.judiciary.compliance import ConsentGate
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
             return_value=MagicMock(first=MagicMock(return_value=("REVOKED",)))
@@ -339,7 +333,7 @@ class TestConsentGate:
 class TestSessionOrchestrator:
     @pytest.mark.asyncio
     async def test_valid_transition_succeeds(self):
-        from eduboost.orchestrator.state_machine import SessionOrchestrator, SessionState
+        from app.api.judiciary.state_machine import SessionOrchestrator, SessionState
 
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(return_value=MagicMock(first=MagicMock(return_value=None)))
@@ -361,7 +355,7 @@ class TestSessionOrchestrator:
 
     @pytest.mark.asyncio
     async def test_invalid_transition_raises(self):
-        from eduboost.orchestrator.state_machine import InvalidTransitionError, SessionOrchestrator, SessionState
+        from app.api.judiciary.state_machine import InvalidTransitionError, SessionOrchestrator, SessionState
 
         mock_session = AsyncMock()
         orch = SessionOrchestrator(mock_session)
@@ -371,7 +365,7 @@ class TestSessionOrchestrator:
 
     @pytest.mark.asyncio
     async def test_suspended_learner_cannot_transition_except_to_archived(self):
-        from eduboost.orchestrator.state_machine import (
+        from app.api.judiciary.state_machine import (
             ConsentSuspendedError, InvalidTransitionError, SessionOrchestrator, SessionState
         )
         mock_session = AsyncMock()
@@ -387,7 +381,7 @@ class TestSessionOrchestrator:
 class TestIRTEngine:
     @pytest.mark.asyncio
     async def test_parameter_update_creates_new_version(self):
-        from eduboost.irt.engine import IRTEngine
+        from app.api.judiciary.engine import IRTEngine
 
         mock_session = AsyncMock()
         # First call: MAX(version) = 0
@@ -403,7 +397,7 @@ class TestIRTEngine:
         assert version == 1
 
     def test_irt_3pl_probability_bounds(self):
-        from eduboost.irt.engine import IRTItem
+        from app.api.judiciary.engine import IRTItem
         item = IRTItem("TEST-001", a=1.0, b=0.0, c=0.25)
         # P(theta=high) should approach 1.0
         assert item.probability(5.0) > 0.99
@@ -414,14 +408,14 @@ class TestIRTEngine:
         assert 0.5 < p_at_b < 0.7
 
     def test_eap_update_increases_theta_on_correct(self):
-        from eduboost.irt.engine import IRTEngine, IRTItem
+        from app.api.judiciary.engine import IRTEngine, IRTItem
         engine = IRTEngine(session=MagicMock())
         item = IRTItem("ITEM-001", a=1.0, b=0.0, c=0.25)
         updated = engine._eap_update(0.0, item, correct=True)
         assert updated > 0.0
 
     def test_eap_update_decreases_theta_on_incorrect(self):
-        from eduboost.irt.engine import IRTEngine, IRTItem
+        from app.api.judiciary.engine import IRTEngine, IRTItem
         engine = IRTEngine(session=MagicMock())
         item = IRTItem("ITEM-001", a=1.0, b=0.0, c=0.25)
         updated = engine._eap_update(0.0, item, correct=False)
@@ -433,7 +427,7 @@ class TestIRTEngine:
 # ============================================================================
 class TestEtherProfiler:
     def test_build_profile_returns_valid_sephira(self):
-        from eduboost.pillar_5_ether.profiler import EtherProfiler
+        from app.api.judiciary.profiler import EtherProfiler
         profiler = EtherProfiler()
         profile = profiler.build_profile(
             "PSEUDO-001",
@@ -450,8 +444,8 @@ class TestEtherProfiler:
         assert profile.warmth_level >= 0.0 and profile.warmth_level <= 1.0
 
     def test_profile_decay_toward_neutral(self):
-        from eduboost.pillar_5_ether.models import LearnerEtherProfile, Sephira
-        from eduboost.pillar_5_ether.profiler import EtherProfiler
+        from app.api.judiciary.models import LearnerEtherProfile, Sephira
+        from app.api.judiciary.profiler import EtherProfiler
         profiler = EtherProfiler()
         profile = LearnerEtherProfile(
             learner_pseudonym="PSEUDO-DECAY",
@@ -464,8 +458,8 @@ class TestEtherProfiler:
         assert decayed.warmth_level < profile.warmth_level
 
     def test_decay_zero_days_unchanged(self):
-        from eduboost.pillar_5_ether.models import LearnerEtherProfile
-        from eduboost.pillar_5_ether.profiler import EtherProfiler
+        from app.api.judiciary.models import LearnerEtherProfile
+        from app.api.judiciary.profiler import EtherProfiler
         profiler = EtherProfiler()
         profile = LearnerEtherProfile(learner_pseudonym="PSEUDO-NODECAY", tone_pacing=0.8)
         result = profiler.apply_decay(profile, days_inactive=0)

@@ -9,7 +9,7 @@ from typing import Optional
 
 import httpx
 
-from app.api.pillar_2_executive.base import ExecutiveAction, JudiciaryStampRef
+from .base import ExecutiveAction, JudiciaryStampRef
 
 
 class JudiciaryClient:

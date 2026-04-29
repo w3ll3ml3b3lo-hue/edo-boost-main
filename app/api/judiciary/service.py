@@ -47,6 +47,20 @@ _PII_PATTERNS = [
 _UNDER_13_FLAG = "UNDER_13"
 _PII_VIOLATION_TYPE = "PII_IN_PROMPT"
 
+_LESSON_ALLOWED_KEYS = frozenset(
+    {
+        "subject_code",
+        "subject_label",
+        "topic",
+        "home_language",
+        "learning_style_primary",
+        "mastery_prior",
+        "has_gap",
+        "gap_grade",
+        "sa_theme",
+    }
+)
+
 
 class JudiciaryService:
     def __init__(self, session: AsyncSession):
@@ -128,7 +142,30 @@ class JudiciaryService:
             if flag != _UNDER_13_FLAG:
                 return "Under-13 learner flag not set — POPIA parental consent gate required."
 
+        # Structural validation (from legacy)
+        structural_violations = self._structural(action)
+        if structural_violations:
+            return f"Structural violation: {', '.join(structural_violations)}"
+
         return None
+
+    def _structural(self, action: ExecutiveActionIn) -> list[str]:
+        violations: list[str] = []
+        # Mapping intent to legacy action_type logic
+        if action.intent == "generate_lesson":
+            keys = set(action.parameters.keys())
+            if not keys.issubset(_LESSON_ALLOWED_KEYS):
+                violations.append("POPIA_03: Unexpected parameter keys")
+                return violations
+            if action.parameters.get("has_gap"):
+                gg = action.parameters.get("gap_grade")
+                # Grade is likely in parameters for the new model
+                current_grade = action.parameters.get("grade")
+                if gg is None:
+                    violations.append("CAPS_03: Missing gap_grade")
+                elif current_grade is not None and gg >= current_grade:
+                    violations.append("CAPS_03: gap_grade must be less than current grade")
+        return violations
 
     # ------------------------------------------------------------------
     # LLM review
