@@ -32,5 +32,5 @@ def encrypt_email(plain_email: str) -> str:
     return encrypt_text(plain_email)
 
 
-def decrypt_email(encrypted_email: str) -> str:
+def decrypt_email(encrypted_email: str) -> str | None:
     return decrypt_text(encrypted_email)

@@ -6,7 +6,7 @@ for compliance and transparency purposes.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, List
 from uuid import UUID
 from enum import Enum
 
@@ -216,7 +216,7 @@ class AuditQueryService:
         events = result.scalars().all()
 
         # Organize by category
-        categorized = {
+        categorized: Dict[str, List[dict]] = {
             "access": [],
             "modifications": [],
             "consent": [],
@@ -282,12 +282,12 @@ class AuditQueryService:
         total_events = len(all_events)
 
         # Count by event type
-        event_counts = {}
+        event_counts: Dict[str, int] = {}
         for event in all_events:
             event_counts[event.event_type] = event_counts.get(event.event_type, 0) + 1
 
         # Count by pillar
-        pillar_counts = {}
+        pillar_counts: Dict[str, int] = {}
         for event in all_events:
             pillar_counts[event.pillar] = pillar_counts.get(event.pillar, 0) + 1
 

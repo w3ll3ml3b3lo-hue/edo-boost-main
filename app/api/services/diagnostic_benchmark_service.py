@@ -215,7 +215,7 @@ class DiagnosticBenchmarkService:
         sessions = result.scalars().all()
 
         # Group by subject
-        by_subject = {}
+        by_subject: Dict[str, Any] = {}
         for session in sessions:
             subject = session.subject_code
             if subject not in by_subject:
@@ -282,7 +282,7 @@ class DiagnosticBenchmarkService:
         sessions = result.scalars().all()
 
         # Group by grade
-        by_grade = {}
+        by_grade: Dict[int, Any] = {}
         for session in sessions:
             grade = session.grade_level
             if grade not in by_grade:

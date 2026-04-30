@@ -110,7 +110,7 @@ class LessonService(WorkerAgent):
     async def _apply_ether(self, learner_pseudonym: Optional[str], prompt: str) -> str:
         """Fetch cached EtherProfile and inject tone/pacing parameters."""
         try:
-            from app.api.pillar_5_ether.prompt_modifier import EtherPromptModifier
+            from .profiler import EtherPromptModifier
 
             modifier = EtherPromptModifier(self._session)
             return await modifier.apply(prompt, learner_pseudonym)

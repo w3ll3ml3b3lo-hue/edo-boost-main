@@ -22,6 +22,22 @@ from app.api.models.db_models import (
 class TestParentPortalIntegration:
     """Integration tests for ParentPortalService."""
 
+    @pytest_asyncio.fixture(autouse=True)
+    async def mock_judiciary(self):
+        from app.api.judiciary.client import JudiciaryClient
+        from app.api.judiciary.base import JudiciaryStampRef, WorkerAgent
+        from unittest.mock import patch
+        mock_stamp = JudiciaryStampRef(
+            stamp_id="test-stamp",
+            action_id="test-action",
+            verdict="APPROVED",
+            reason="Integration test mock"
+        )
+        with patch.object(JudiciaryClient, "review", new_callable=AsyncMock) as mock_review, \
+             patch.object(WorkerAgent, "_assert_consent", new_callable=AsyncMock) as mock_consent:
+            mock_review.return_value = mock_stamp
+            yield (mock_review, mock_consent)
+
     @pytest_asyncio.fixture
     def mock_db_session(self):
         """Create a mock database session."""

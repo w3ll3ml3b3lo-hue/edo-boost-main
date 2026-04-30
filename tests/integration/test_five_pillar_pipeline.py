@@ -6,6 +6,7 @@ These tests mock the LLM calls but exercise the real constitutional machinery.
 """
 import pytest
 from unittest.mock import patch, AsyncMock
+import pytest_asyncio
 import json
 from httpx import ASGITransport, AsyncClient
 
@@ -68,11 +69,40 @@ def _lesson_request(learner_id="00000000-0000-0000-0000-000000000001"):
 @pytest.mark.asyncio
 @pytest.mark.integration
 class TestLessonPipelineEndToEnd:
+    @pytest_asyncio.fixture(autouse=True)
+    async def mock_judiciary(self):
+        from app.api.judiciary.client import JudiciaryClient
+        from app.api.judiciary.base import JudiciaryStampRef, WorkerAgent
+        from unittest.mock import patch
+        mock_stamp = JudiciaryStampRef(
+            stamp_id="test-stamp",
+            action_id="test-action",
+            verdict="APPROVED",
+            reason="Integration test mock"
+        )
+        with patch.object(JudiciaryClient, "review", new_callable=AsyncMock) as mock_review, \
+             patch.object(WorkerAgent, "_assert_consent", new_callable=AsyncMock) as mock_consent:
+            mock_review.return_value = mock_stamp
+            yield (mock_review, mock_consent)
 
     async def test_full_pipeline_success(self):
         """Happy path: clean params → APPROVED → lesson generated."""
-        with patch("app.api.services.lesson_service.call_llm", new_callable=AsyncMock) as mock_llm:
+        from app.api.judiciary.client import JudiciaryClient
+        from app.api.judiciary.base import JudiciaryStampRef
+        
+        mock_stamp = JudiciaryStampRef(
+            stamp_id="test-stamp",
+            action_id="test-action",
+            verdict="APPROVED",
+            reason="Integration test mock"
+        )
+        
+        with patch("app.api.services.lesson_service.call_llm", new_callable=AsyncMock) as mock_llm, \
+             patch.object(JudiciaryClient, "review", new_callable=AsyncMock) as mock_review:
+            
             mock_llm.return_value = MOCK_LESSON_STR
+            mock_review.return_value = mock_stamp
+            
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post("/api/v1/lessons/generate", json=_lesson_request())
 

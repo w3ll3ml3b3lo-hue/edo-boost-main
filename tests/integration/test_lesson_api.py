@@ -1,5 +1,6 @@
 """Integration tests for the Lesson Generation endpoint."""
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch, AsyncMock
 from app.api.main import app
@@ -10,6 +11,21 @@ MOCK_LESSON_JSON = """{"title":"Fractions at the Braai","story_hook":"Mama is ma
 @pytest.mark.asyncio
 @pytest.mark.integration
 class TestLessonGeneration:
+    @pytest_asyncio.fixture(autouse=True)
+    async def mock_judiciary(self):
+        from app.api.judiciary.client import JudiciaryClient
+        from app.api.judiciary.base import JudiciaryStampRef, WorkerAgent
+        from unittest.mock import patch
+        mock_stamp = JudiciaryStampRef(
+            stamp_id="test-stamp",
+            action_id="test-action",
+            verdict="APPROVED",
+            reason="Integration test mock"
+        )
+        with patch.object(JudiciaryClient, "review", new_callable=AsyncMock) as mock_review, \
+             patch.object(WorkerAgent, "_assert_consent", new_callable=AsyncMock) as mock_consent:
+            mock_review.return_value = mock_stamp
+            yield (mock_review, mock_consent)
 
     async def test_generate_lesson_success(self):
         with patch("app.api.services.lesson_service.call_llm", new_callable=AsyncMock) as mock_llm:

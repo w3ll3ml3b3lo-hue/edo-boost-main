@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from .models import (
     LearnerEtherProfile,
+    LearnerEtherProfileORM,
     MetaphorStyle,
     NarrativeFrame,
     Sephira,
@@ -178,3 +179,76 @@ class EtherProfiler:
             Sephira.MALKUTH: NarrativeFrame.BUILDER,
         }
         return frame_map.get(sephira, NarrativeFrame.EXPLORER)
+
+
+class EtherPromptModifier:
+    """
+    Applies Ether (Pillar 5) tone modifications to LLM prompts based on
+    the learner's archetype profile.  Used by LessonService to personalise
+    generated content.
+    """
+
+    def __init__(self, session: Any = None) -> None:
+        self._profiler = EtherProfiler()
+        self._session = session
+
+    async def apply(self, prompt: str, learner_pseudonym: str) -> str:
+        """
+        Modify the prompt with Ether tone instructions derived from the
+        learner's profile.  Falls back to the default Tiferet profile if
+        no stored profile is found.
+        """
+        try:
+            profile = await self._load_profile(learner_pseudonym)
+        except Exception:
+            # Cold-start fallback — use default balanced profile
+            profile = LearnerEtherProfile(learner_pseudonym=learner_pseudonym)
+
+        tone_instruction = self._build_tone_instruction(profile)
+        return f"{prompt}\n\n{tone_instruction}"
+
+    async def _load_profile(self, learner_pseudonym: str) -> LearnerEtherProfile:
+        """Load an existing profile from DB or return default."""
+        if self._session is None:
+            return LearnerEtherProfile(learner_pseudonym=learner_pseudonym)
+
+        from sqlalchemy import select as sa_select
+
+        result = await self._session.execute(
+            sa_select(LearnerEtherProfileORM).where(
+                LearnerEtherProfileORM.learner_pseudonym == learner_pseudonym
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return LearnerEtherProfile(learner_pseudonym=learner_pseudonym)
+
+        return LearnerEtherProfile(
+            learner_pseudonym=row.learner_pseudonym,
+            dominant_sephira=Sephira(row.dominant_sephira),
+            tone_pacing=row.tone_pacing,
+            metaphor_style=MetaphorStyle(row.metaphor_style),
+            warmth_level=row.warmth_level,
+            challenge_tolerance=row.challenge_tolerance,
+            preferred_narrative_frame=NarrativeFrame(row.preferred_narrative_frame),
+        )
+
+    @staticmethod
+    def _build_tone_instruction(profile: LearnerEtherProfile) -> str:
+        pacing_label = (
+            "slow and patient" if profile.tone_pacing < 0.35
+            else "brisk and challenging" if profile.tone_pacing > 0.65
+            else "moderate"
+        )
+        warmth_label = (
+            "very warm and encouraging" if profile.warmth_level > 0.7
+            else "neutral" if profile.warmth_level > 0.4
+            else "concise and factual"
+        )
+        return (
+            f"[ETHER TONE — {profile.dominant_sephira.value}] "
+            f"Pacing: {pacing_label}. "
+            f"Warmth: {warmth_label}. "
+            f"Metaphor style: {profile.metaphor_style.value}. "
+            f"Narrative frame: {profile.preferred_narrative_frame.value}."
+        )

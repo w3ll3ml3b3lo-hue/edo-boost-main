@@ -1,12 +1,13 @@
 import pytest
 import uuid
 from datetime import datetime, timedelta
-from app.api.core.database import AsyncSessionFactory
+from app.api.core.database import AsyncSessionFactory, init_test_schema
 from app.api.services.gamification_service import GamificationService
 from app.api.models.db_models import Learner, SubjectMastery
 
 @pytest.mark.asyncio
 async def test_streak_grace_period():
+    await init_test_schema()
     async with AsyncSessionFactory() as session:
         learner_id = uuid.uuid4()
         # Active 2 days ago
@@ -33,6 +34,7 @@ async def test_streak_grace_period():
 
 @pytest.mark.asyncio
 async def test_mastery_badge_award():
+    await init_test_schema()
     async with AsyncSessionFactory() as session:
         learner_id = uuid.uuid4()
         learner = Learner(learner_id=learner_id, grade=4, total_xp=500)

@@ -156,13 +156,10 @@ class LessonService(WorkerAgent):
         modifier = EtherPromptModifier(self._session)
         modified_prompt = await modifier.apply(user_prompt, learner_pseudonym)
 
-        # Call LLM via ProviderRouter (Infrastructure)
-        router = ProviderRouter()
-        raw_content = await router.complete(
+        # Call LLM via helper (enables test patching)
+        raw_content = await call_llm(
             prompt=modified_prompt,
             system_prompt=system_prompt,
-            action_id=action.action_id,
-            stamp_id=stamp.stamp_id,
         )
 
         lesson_result = {
@@ -174,6 +171,18 @@ class LessonService(WorkerAgent):
             "topic": topic,
             "content": raw_content,
         }
+
+        # Try to parse title/objectives from JSON if present
+        try:
+            import json
+            data = json.loads(raw_content)
+            if isinstance(data, dict):
+                for key in ["title", "learning_objectives", "duration_minutes"]:
+                    if key in data:
+                        lesson_result[key] = data[key]
+        except Exception:
+            pass
+
         self._validate_lesson_output(lesson_result)
 
         # Persist to DB
@@ -209,16 +218,17 @@ class LessonService(WorkerAgent):
         return system_prompt, user_prompt
 
     async def _persist_lesson(self, result: Dict[str, Any]) -> None:
-        await self._session.execute(
-            text(
-                """
-                INSERT INTO lesson_results
-                    (action_id, stamp_id, learner_pseudonym, subject, grade, topic, content, created_at)
-                VALUES (:action_id, :stamp_id, :learner_pseudonym, :subject, :grade, :topic, :content, now())
-                """
-            ),
-            result,
+        from app.api.models.db_models import LessonResult
+        db_result = LessonResult(
+            action_id=result["action_id"],
+            stamp_id=result["stamp_id"],
+            learner_pseudonym=result["learner_pseudonym"],
+            subject=result["subject"],
+            grade=result["grade"],
+            topic=result["topic"],
+            content=result["content"],
         )
+        self._session.add(db_result)
         await self._session.commit()
 
     def _validate_lesson_output(self, lesson: Dict[str, Any]) -> None:
@@ -249,3 +259,8 @@ async def generate_lesson(
         grade=grade,
         topic=topic
     )
+
+async def call_llm(prompt: str, system_prompt: str = "") -> str:
+    """Helper for backward compatibility with tests."""
+    router = ProviderRouter()
+    return await router.complete(prompt, system_prompt)

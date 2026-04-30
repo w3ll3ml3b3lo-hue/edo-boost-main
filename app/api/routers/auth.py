@@ -71,7 +71,7 @@ async def get_current_user(
 
             r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
             revoked = await r.get(f"token_blacklist:{jti}")
-            await r.aclose()
+            await r.close()
             if revoked:
                 raise HTTPException(status_code=401, detail="Token revoked")
         except HTTPException:
@@ -372,7 +372,7 @@ async def guardian_logout(user: dict = Depends(get_current_user)):
                 token_key, ttl, f"{user.get('role')}:{datetime.utcnow().isoformat()}"
             )
 
-        await r.aclose()
+        await r.close()
 
         log.info("auth.guardian.logout", parent_id=user.get("sub"))
 
@@ -417,7 +417,7 @@ async def learner_logout(user: dict = Depends(get_current_user)):
             token_key = f"token_blacklist:{user.get('jti')}"
             await r.setex(token_key, ttl, f"learner:{datetime.utcnow().isoformat()}")
 
-        await r.aclose()
+        await r.close()
 
         log.info("auth.learner.logout", learner_id=user.get("sub"))
 

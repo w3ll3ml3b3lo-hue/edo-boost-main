@@ -134,7 +134,7 @@ async def generate_lesson_endpoint(request: LessonRequest, _db=Depends(get_db)):
     return LessonGenerationResponse(
         success=True,
         lesson_id=result.lesson_id or "unknown",
-        lesson=result.output,
+        lesson=result.output or {},
         meta=LessonMeta(
             stamp_status=result.stamp_status,
             stamp_id=result.stamp_id,
@@ -157,7 +157,7 @@ async def get_cached_lesson(lesson_id: str):
 
         r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
         raw = await r.get(f"lesson:{lesson_id}")
-        await r.aclose()
+        await r.close()
         if raw:
             return CachedLessonResponse(
                 success=True, lesson=json.loads(raw), source="cache"

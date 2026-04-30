@@ -73,6 +73,9 @@ async def _refresh_study_plan(learner_id: str):
         return
 
     plan_data = result.output
+    if not plan_data:
+        logger.error(f"Orchestrator returned empty output for learner {learner_id}")
+        return
 
     # 4. Persist the plan to DB
     import json

@@ -135,12 +135,17 @@ class StudyPlanService(WorkerAgent):
 
     async def generate_plan(
         self,
-        learner_id: uuid.UUID,
+        learner_id: str | uuid.UUID,
         grade: int,
-        knowledge_gaps: list,
-        subjects_mastery: dict,
+        knowledge_gaps: list | None = None,
+        subjects_mastery: dict | None = None,
         gap_ratio: float = 0.4,
     ) -> Dict[str, Any]:
+        """
+        Main entry point for generating a study plan.
+        """
+        knowledge_gaps = knowledge_gaps or []
+        subjects_mastery = subjects_mastery or {}
         return await self.run(
             learner_pseudonym=str(learner_id),
             grade=grade,
@@ -231,6 +236,40 @@ class StudyPlanService(WorkerAgent):
         if not gaps:
             return "Grade-level CAPS mastery"
         return f"Close {len(gaps)} priority learning gap(s)"
+
+    def _determine_week_focus(self, knowledge_gaps: list, subjects_mastery: dict) -> str:
+        """Determine week focus based on gaps and mastery."""
+        if not knowledge_gaps:
+            return "Grade-level CAPS mastery"
+        priority_subject = min(subjects_mastery.keys(), key=lambda s: subjects_mastery.get(s, 0))
+        return f"Focus on {priority_subject}: {', '.join(knowledge_gaps[:2])}"
+
+    def _prioritize_subjects(self, subjects_mastery: Dict[str, float]) -> list[str]:
+        """Sort subjects by mastery score ascending (highest gap first)."""
+        return sorted(subjects_mastery.keys(), key=lambda s: subjects_mastery.get(s, 0))
+
+    def _generate_remediation_tasks(self, knowledge_gaps: list, grade: int, grade_band: str) -> list[Dict[str, Any]]:
+        """Stub for remediation task generation."""
+        return [{"label": f"Review {gap}", "type": "gap-fill"} for gap in knowledge_gaps]
+
+    def _generate_grade_tasks(self, focus_subjects: list, grade: int, grade_band: str) -> list[Dict[str, Any]]:
+        """Stub for grade-level task generation."""
+        return [{"label": f"{subject} Practice", "type": "curriculum"} for subject in focus_subjects]
+
+    def _generate_weekly_schedule(
+        self, grade: int, grade_band: str, subjects_mastery: dict, knowledge_gaps: list, gap_ratio: float = 0.4
+    ) -> Dict[str, list]:
+        """Distribute tasks across a 7-day week (lowercase keys)."""
+        schedule: Dict[str, list] = {d: [] for d in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]}
+        
+        # Simple task distribution
+        for gap in knowledge_gaps:
+            schedule["monday"].append({"label": f"Review {gap}", "type": "gap-fill"})
+        
+        for subject in subjects_mastery:
+            schedule["tuesday"].append({"label": f"{subject} Practice", "type": "curriculum"})
+            
+        return schedule
 
 # Procedural wrapper
 async def generate_study_plan(

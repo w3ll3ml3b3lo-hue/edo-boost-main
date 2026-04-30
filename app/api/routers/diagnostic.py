@@ -19,6 +19,7 @@ from app.api.models.api_models import (
     DiagnosticSubmitResponse,
     ErrorResponse,
 )
+from typing import Any, Dict, cast
 from app.api.core.database import AsyncSessionFactory, get_db
 
 router = APIRouter()
@@ -154,7 +155,10 @@ async def run_diagnostic(request: DiagnosticRequest):
             )
 
         # Extract results from orchestrator
-        output = result.output
+        output = cast(Dict[str, Any], result.output)
+        if not output:
+            raise HTTPException(status_code=500, detail="Diagnostic output missing")
+
         gap_report = output.get("gap_report", {})
         session_summary = output.get("session_summary", {})
 
@@ -253,7 +257,10 @@ async def start_diagnostic(request: DiagnosticRequest):
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
 
-    output = result.output
+    output = cast(Dict[str, Any], result.output)
+    if not output:
+        raise HTTPException(status_code=500, detail="Diagnostic output missing")
+
     first_item_data = output.get("first_item")
     state = output.get("session_state", {})
 
@@ -379,8 +386,11 @@ async def submit_diagnostic_response(
     if not orch_result.success:
         raise HTTPException(status_code=500, detail=orch_result.error)
 
-    output = orch_result.output
-    state = output["session_state"]
+    output = cast(Dict[str, Any], orch_result.output)
+    if not output:
+        raise HTTPException(status_code=500, detail="Diagnostic output missing")
+
+    state = cast(Dict[str, Any], output.get("session_state", {}))
 
     async with AsyncSessionFactory() as session:
         await session.execute(
@@ -406,8 +416,8 @@ async def submit_diagnostic_response(
             },
         )
 
-        status_val = "completed" if output["is_complete"] else "in_progress"
-        completed_at = datetime.utcnow() if output["is_complete"] else None
+        status_val = "completed" if output.get("is_complete") else "in_progress"
+        completed_at = datetime.utcnow() if output.get("is_complete") else None
 
         await session.execute(
             text("""
@@ -422,8 +432,8 @@ async def submit_diagnostic_response(
                 "theta": state["theta"],
                 "sem": state["sem"],
                 "count": state["responses_count"],
-                "gaps": json.dumps(output["gap_report"]["knowledge_gaps"])
-                if output["is_complete"]
+                "gaps": json.dumps(output.get("gap_report", {}).get("knowledge_gaps", []))
+                if output.get("is_complete")
                 else "[]",
                 "cat": completed_at,
             },
@@ -431,8 +441,9 @@ async def submit_diagnostic_response(
         await session.commit()
 
     next_item = None
-    if output["next_item_data"]:
-        ni = output["next_item_data"]
+    next_item_data = output.get("next_item_data")
+    if next_item_data:
+        ni = next_item_data
         next_item = DiagnosticItem(
             item_id=ni.get("item_id") if isinstance(ni, dict) else ni.item_id,
             question_text=ni.get("question_text")
@@ -447,16 +458,16 @@ async def submit_diagnostic_response(
             else ni.difficulty_label,
         )
 
-    if output["is_complete"]:
+    if output.get("is_complete"):
         from app.api.tasks.plan_tasks import refresh_study_plan_task
 
         refresh_study_plan_task.delay(str(session_row["learner_id"]))
 
     return DiagnosticSubmitResponse(
         success=True,
-        is_complete=output["is_complete"],
+        is_complete=bool(output.get("is_complete")),
         next_item=next_item,
-        gap_report=output["gap_report"],
+        gap_report=cast(Dict[str, Any], output.get("gap_report", {})),
     )
 
 

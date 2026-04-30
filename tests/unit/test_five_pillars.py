@@ -294,7 +294,7 @@ class TestConsentGate:
         from app.api.judiciary.compliance import ConsentGate
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
-            return_value=MagicMock(first=MagicMock(return_value=("ACTIVE",)))
+            return_value=MagicMock(first=MagicMock(return_value=("consent_granted",)))
         )
         gate = ConsentGate(mock_session)
         await gate.assert_active("PSEUDO-123")  # should not raise
@@ -315,7 +315,7 @@ class TestConsentGate:
         from app.api.judiciary.compliance import ConsentGate
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
-            return_value=MagicMock(first=MagicMock(return_value=("REVOKED",)))
+            return_value=MagicMock(first=MagicMock(return_value=("consent_revoked",)))
         )
         gate = ConsentGate(mock_session)
         with pytest.raises(PermissionError):

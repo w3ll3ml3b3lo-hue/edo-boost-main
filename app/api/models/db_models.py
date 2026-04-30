@@ -205,6 +205,20 @@ class ConsentAudit(Base):
     occurred_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class LessonResult(Base):
+    __tablename__ = "lesson_results"
+
+    result_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    action_id = Column(String(100), nullable=False)
+    stamp_id = Column(String(100), nullable=False)
+    learner_pseudonym = Column(String(100), nullable=False)
+    subject = Column(String(50))
+    grade = Column(SmallInteger)
+    topic = Column(String(100))
+    content = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class DiagnosticSession(Base):
     """Tracks diagnostic assessment sessions and outcomes."""
 

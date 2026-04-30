@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Union
 
 from app.api.constitutional_schema.types import OperationResult
 from app.api.core.database import AsyncSessionFactory
@@ -34,13 +34,14 @@ class Orchestrator:
         t0 = time.perf_counter()
         try:
             async with AsyncSessionFactory() as session:
+                service: Union[LessonService, StudyPlanService, ParentReportService]
                 if req.operation == "GENERATE_LESSON":
                     service = LessonService(session)
                     result = await service.run(
                         learner_pseudonym=req.learner_id,
-                        subject=req.params["subject"],
+                        subject=req.params.get("subject") or req.params.get("subject_code", "UNKNOWN"),
                         grade=req.grade,
-                        topic=req.params["topic"]
+                        topic=req.params.get("topic", "General")
                     )
                 elif req.operation == "GENERATE_STUDY_PLAN":
                     service = StudyPlanService(session)

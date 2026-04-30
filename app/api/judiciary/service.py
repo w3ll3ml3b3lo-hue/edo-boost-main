@@ -87,7 +87,7 @@ class JudiciaryService:
         cached = await self._cache_lookup(action.agent_id, action.intent, rules_hash)
         if cached:
             logger.debug("Judiciary cache hit: action=%s", action.action_id)
-            return cached._replace(stamp_id=str(uuid.uuid4()), action_id=action.action_id)
+            return cached.model_copy(update={"stamp_id": str(uuid.uuid4()), "action_id": action.action_id})
 
         # 3. Retrieve active ConstitutionalRules for context
         active_rules = await self._get_relevant_rules(action.claimed_rules)

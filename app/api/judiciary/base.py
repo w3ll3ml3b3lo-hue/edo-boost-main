@@ -144,16 +144,17 @@ class WorkerAgent(ABC):
         """Verify learner has ACTIVE parental consent. Raises ConsentViolationError if not."""
         from sqlalchemy import text
 
-        row = (
-            await session.execute(
-                text(
-                    "SELECT event_type FROM consent_audit "
-                    "WHERE pseudonym_id = :p "
-                    "ORDER BY occurred_at DESC LIMIT 1"
-                ),
-                {"p": learner_pseudonym},
-            )
-        ).first()
+        result = await session.execute(
+            text(
+                "SELECT event_type FROM consent_audit "
+                "WHERE pseudonym_id = :p "
+                "ORDER BY occurred_at DESC LIMIT 1"
+            ),
+            {"p": learner_pseudonym},
+        )
+        row = result.first()
+        if hasattr(row, "__await__"):
+            row = await row
 
         if row is None or row[0] != "consent_granted":
             raise ConsentViolationError(

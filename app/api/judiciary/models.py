@@ -142,8 +142,8 @@ class ExecutiveActionIn(BaseModel):
     action_id: str
     agent_id: str
     intent: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-    claimed_rules: List[str] = Field(default_factory=list)
+    parameters: Dict[str, Any] = Field(default_factory=lambda: {})
+    claimed_rules: List[str] = Field(default_factory=lambda: [])
     learner_pseudonym: Optional[str] = None
     timestamp: datetime
     signature: str = ""
@@ -153,7 +153,7 @@ class JudiciaryStamp(BaseModel):
     stamp_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     action_id: str
     verdict: StampVerdict
-    rules_checked: List[str] = Field(default_factory=list)
+    rules_checked: List[str] = Field(default_factory=lambda: [])
     reason: str = ""
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reviewer_model_version: str = ""

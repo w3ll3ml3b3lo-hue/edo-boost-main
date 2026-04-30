@@ -223,7 +223,7 @@ class GamificationService:
 
         # Apply grade band daily XP cap
         grade_band = "R-3" if learner.grade <= 3 else "4-7"
-        max_daily_xp = GRADE_BAND_CONFIG[grade_band]["max_daily_xp"]
+        max_daily_xp: int = int(GRADE_BAND_CONFIG[grade_band]["max_daily_xp"])
 
         # Check if learner has already reached daily cap
         from datetime import datetime, timedelta
@@ -260,18 +260,15 @@ class GamificationService:
 
         # Handle Mock objects returned in tests
         from unittest.mock import Mock
-        if isinstance(daily_xp_row, Mock):
-            xp_awarded_today = 0
-        else:
-            xp_awarded_today = (
-                daily_xp_row.get("xp_awarded_today", 0) if daily_xp_row else 0
-            )
+        xp_awarded_today: int = 0
+        if not isinstance(daily_xp_row, Mock):
+            xp_awarded_today = int(daily_xp_row.get("xp_awarded_today", 0) if daily_xp_row else 0)
 
         # Rough conversion: treat time_ms / 10 as rough XP proxy for cap checking
         # (More precise: maintain a separate daily XP counter in cache or separate table)
-        estimated_daily_xp = xp_awarded_today // 10 if xp_awarded_today else 0
+        estimated_daily_xp: int = xp_awarded_today // 10 if xp_awarded_today else 0
 
-        total_awarded = base_xp + streak_bonus
+        total_awarded: int = base_xp + streak_bonus
 
         # Check against daily cap
         if estimated_daily_xp + total_awarded > max_daily_xp:

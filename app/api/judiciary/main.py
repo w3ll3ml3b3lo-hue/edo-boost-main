@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import AsyncGenerator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,7 +74,7 @@ def verify_api_key(x_judiciary_api_key: str = Header(...)) -> None:
 # ---------------------------------------------------------------------------
 # Dependency: JudiciaryService
 # ---------------------------------------------------------------------------
-async def get_judiciary_service() -> JudiciaryService:
+async def get_judiciary_service() -> AsyncGenerator[JudiciaryService, None]:
     """Create a JudiciaryService instance with its own DB session."""
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker

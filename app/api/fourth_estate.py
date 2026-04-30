@@ -32,7 +32,7 @@ class FourthEstate:
         self._total_events = 0
         self._violations = 0
         self._sequence = 0
-        self._redis = None
+        self._redis: Any = None
 
         # Circuit Breaker state
         self._cb_state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
@@ -49,6 +49,10 @@ class FourthEstate:
             "stream_key": self.stream_key,
             "circuit_breaker_state": self._cb_state,
         }
+
+    def get_sequence(self) -> int:
+        """Return the current audit event sequence number."""
+        return self._sequence
 
     async def _try_redis_publish(self, event: AuditEvent) -> bool:
         if not self.redis_url:
