@@ -1,0 +1,17 @@
+# grafana/dashboards/dashboards.yml
+# Grafana dashboard provisioning configuration.
+# Mounted read-only into Grafana at /etc/grafana/provisioning/dashboards/
+apiVersion: 1
+
+providers:
+  - name: "EduBoost SA"
+    orgId: 1
+    folder: "EduBoost SA"
+    folderUid: "eduboost-folder"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
