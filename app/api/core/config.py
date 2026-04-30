@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     CACHE_TTL_SECONDS: int = 3600
 
+    # RabbitMQ (Fourth Estate Audit Trail)
+    RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"
+
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3050",
