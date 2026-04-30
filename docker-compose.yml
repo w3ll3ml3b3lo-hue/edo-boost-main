@@ -1,8 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # EduBoost SA — Docker Compose (Local Development Stack)
 # Usage: docker-compose up --build
+#
+# Changes from previous version:
+#   - Removed SQL script injection from postgres (was: docker-entrypoint-initdb.d)
+#   - Added db-migrate service: waits for Postgres, runs `alembic upgrade head`
+#   - Fixed frontend port mapping: 3000:3000 (was: 3002:3050, conflicted with README)
+#   - api and all workers now depend on db-migrate completing successfully
 # ─────────────────────────────────────────────────────────────────────────────
-
 name: eduboost-sa
 
 networks:
@@ -14,11 +19,10 @@ volumes:
   redis_data:
   grafana_data:
   prometheus_data:
-  rabbitmq_data:
 
 services:
 
-  # ── FRONTEND: Next.js ──────────────────────────────────────────────────────
+  # ── FRONTEND: Next.js ─────────────────────────────────────────────────────
   frontend:
     build:
       context: ./app/frontend
@@ -26,7 +30,7 @@ services:
       target: development
     container_name: eduboost-frontend
     ports:
-      - "3050:3050"
+      - "3000:3000"   # Fixed: was 3002:3050
     volumes:
       - ./app/frontend:/app
       - /app/node_modules
@@ -42,7 +46,35 @@ services:
       - eduboost-net
     restart: unless-stopped
 
-  # ── BACKEND: FastAPI ───────────────────────────────────────────────────────
+  # ── DB MIGRATE: runs alembic upgrade head, then exits ────────────────────
+  db-migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      target: development
+    container_name: eduboost-migrate
+    command: ["/bin/bash", "/workspace/docker/migrate.sh"]
+    working_dir: /workspace
+    volumes:
+      - ./app:/workspace/app
+      - ./alembic:/workspace/alembic
+      - ./alembic.ini:/workspace/alembic.ini
+      - ./scripts:/workspace/scripts
+      - ./docker/migrate.sh:/workspace/docker/migrate.sh
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-eduboost_user}
+      - POSTGRES_DB=${POSTGRES_DB:-eduboost}
+      - SEED_ON_BOOT=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - eduboost-net
+    restart: "no"   # One-shot: runs once then exits cleanly
+
+  # ── BACKEND: FastAPI ──────────────────────────────────────────────────────
   api:
     build:
       context: .
@@ -56,26 +88,24 @@ services:
       - ./app:/workspace/app
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
       - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - GROQ_API_KEY=${GROQ_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - SENTRY_DSN=${SENTRY_DSN}
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     networks:
       - eduboost-net
     restart: unless-stopped
@@ -85,7 +115,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # ── CELERY WORKER (Background tasks: RLHF, reports, emails) ───────────────
+  # ── CELERY WORKER ─────────────────────────────────────────────────────────
   celery-worker:
     build:
       context: .
@@ -97,25 +127,21 @@ services:
       - ./app:/workspace/app
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
       - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - GROQ_API_KEY=${GROQ_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
     depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      - postgres
+      - redis
+      - db-migrate
     networks:
       - eduboost-net
     restart: unless-stopped
 
-  # ── CELERY BEAT (Scheduled tasks: weekly RLHF batch, plan regeneration) ───
+  # ── CELERY BEAT ───────────────────────────────────────────────────────────
   celery-beat:
     build:
       context: .
@@ -127,21 +153,19 @@ services:
       - ./app:/workspace/app
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
       - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      - postgres
+      - redis
+      - db-migrate
     networks:
       - eduboost-net
     restart: unless-stopped
 
-  # ── POSTGRESQL ────────────────────────────────────────────────────────────
+  # ── POSTGRESQL ─────────────────────────────────────────────────────────────
+  # NOTE: No SQL scripts mounted to docker-entrypoint-initdb.d.
+  # Schema is 100% managed by Alembic via the db-migrate service above.
   postgres:
     image: postgres:16-alpine
     container_name: eduboost-postgres
@@ -162,32 +186,7 @@ services:
       timeout: 5s
       retries: 5
 
-  migrate:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.api
-      target: development
-    container_name: eduboost-migrate
-    command: alembic upgrade head
-    working_dir: /workspace
-    volumes:
-      - ./app:/workspace/app
-      - ./alembic:/workspace/alembic
-      - ./alembic.ini:/workspace/alembic.ini
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - JWT_SECRET=${JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - eduboost-net
-    restart: "no"
-
-  # ── REDIS (Cache + Celery broker) ─────────────────────────────────────────
+  # ── REDIS ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: eduboost-redis
@@ -205,25 +204,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # ── RABBITMQ (Durable Audit Trail) ────────────────────────────────────────
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: eduboost-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    networks:
-      - eduboost-net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  # ── PROMETHEUS (Metrics) ──────────────────────────────────────────────────
+  # ── PROMETHEUS ────────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: eduboost-prometheus
@@ -240,7 +221,7 @@ services:
       - eduboost-net
     restart: unless-stopped
 
-  # ── GRAFANA (Dashboards) ──────────────────────────────────────────────────
+  # ── GRAFANA ───────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.2
     container_name: eduboost-grafana
@@ -260,7 +241,7 @@ services:
       - eduboost-net
     restart: unless-stopped
 
-  # ── FLOWER (Celery monitoring) ────────────────────────────────────────────
+  # ── FLOWER ────────────────────────────────────────────────────────────────
   flower:
     build:
       context: .
@@ -272,7 +253,6 @@ services:
       - "5555:5555"
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       - redis
       - celery-worker
