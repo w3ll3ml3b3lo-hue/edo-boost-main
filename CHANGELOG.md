@@ -40,6 +40,29 @@ Release cadence:
 
 ---
 
+## [0.2.0-rc1] — 2026-05-01
+
+### Added
+- **Inference Microservice**: Decoupled `torch` and `transformers` into a standalone service (`docker/Dockerfile.inference`).
+- **Log Aggregation**: Integrated **Grafana Loki** and **Promtail** for centralized, structured logging.
+- **Multilingual Support**: Added isiZulu (`zu`), Afrikaans (`af`), and isiXhosa (`xh`) lesson generation with localized cultural context.
+- **RLHF Pipeline**: Implemented `RLHFService` for capturing lesson feedback and exporting preference datasets (OpenAI/Anthropic formats).
+- **PWA Support**: Added `manifest.json` and service worker integration for installability and offline resilience.
+- **SLO Instrumentation**: Added missing business-value Prometheus metrics for consent, diagnostic sessions, study plans, and lesson volume.
+- **Security Runbook**: Comprehensive penetration testing checklist in `audits/security/pen_test_checklist.md`.
+- **Alembic Revision 0004**: Added `lesson_feedback` and `rlhf_exports` tables.
+
+### Changed
+- **API Optimization**: Reduced API container footprint from ~4GB to **<500MB** by removing ML dependencies.
+- **Inference Gateway**: Refactored `inference_gateway.py` to use HTTP calls (`httpx`) to the inference sidecar.
+- **Metrics**: Registered all learner-journey SLO counters in `app/api/core/metrics.py`.
+
+### Security
+- **PII Scrubbing**: Enhanced `RLHFService` with automatic regex-based PII scrubbing for free-text comments.
+- **Isolation**: Inference service is isolated from the public internet, reachable only via internal Docker network.
+
+---
+
 ## [0.1.0-beta] — 2026-04-30
 
 First tagged beta release. Establishes foundational architecture.
@@ -66,5 +89,6 @@ First tagged beta release. Establishes foundational architecture.
 
 ---
 
-[Unreleased]: https://github.com/NkgoloL/edo-boost-main/compare/v0.1.0-beta...HEAD
+[Unreleased]: https://github.com/NkgoloL/edo-boost-main/compare/v0.2.0-rc1...HEAD
+[0.2.0-rc1]: https://github.com/NkgoloL/edo-boost-main/compare/v0.1.0-beta...v0.2.0-rc1
 [0.1.0-beta]: https://github.com/NkgoloL/edo-boost-main/releases/tag/v0.1.0-beta

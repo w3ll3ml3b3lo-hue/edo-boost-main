@@ -21,6 +21,9 @@ EduBoost SA is an adaptive learning platform built on a "Five Pillar" architectu
 - 🏆 **Gamification** — XP, badges, streaks for Grade R–3; discovery-based engagement for Grade 4–7.
 - 🔒 **POPIA-Grade Privacy** — Backend-enforced parental consent, pseudonymous learner IDs, and a durable audit trail.
 - 📊 **Parent Portal** — AI-generated progress reports, right-to-access exports, and granular consent management.
+- 🇿🇦 **Multilingual Support** — CAPS-aligned lessons in English, isiZulu, Afrikaans, and isiXhosa.
+- 📱 **Offline-Ready PWA** — Service worker and manifest support for installation and offline resilience.
+- 🧠 **RLHF Pipeline** — Learner feedback collection for continuous AI lesson quality improvement.
 
 ---
 
@@ -46,7 +49,7 @@ eduboost-sa/
 │       ├── src/components/eduboost/   # Specialized UI components
 │       ├── src/lib/api/              # Production-grade service layer
 │       └── package.json
-├── docker/                           # Dockerfiles and Nginx configs
+├── docker/                           # Dockerfiles (API, Inference, Nginx)
 ├── grafana/                          # Grafana provisioning & dashboards
 ├── k8s/                              # Kubernetes manifests
 ├── scripts/                          # DB migrations, seeds, and maintenance
@@ -68,8 +71,11 @@ EduBoost SA is currently in its **Beta** phase, with core architectural pillars 
 - ✅ **Pillar 3 (Judiciary)**: Constitutional policy enforcement via the Judiciary Stamp gate.
 - ✅ **Pillar 4 (Fourth Estate)**: Durable, RabbitMQ-backed audit trail for POPIA compliance.
 - ✅ **Pillar 5 (Ether)**: Psychological archetype profiling and adaptive prompt modification.
-- ✅ **Infrastructure**: Alembic-driven migrations, RabbitMQ messaging, and Prometheus/Grafana observability.
-- ✅ **Compliance**: Backend-enforced parental consent and right-to-erasure workflows.
+- ✅ **Microservices**: Decoupled AI inference into a dedicated service for optimized deployments.
+- ✅ **Observability**: Prometheus/Grafana/Loki stack with business SLO dashboards.
+- ✅ **Multilingual**: Native support for English, isiZulu, Afrikaans, and isiXhosa.
+- ✅ **Compliance**: Full ConsentService with right-to-erasure and versioned policy support.
+- ✅ **PWA**: Installable web app with offline sync capabilities.
 
 ---
 
@@ -148,6 +154,7 @@ The stack includes pre-configured Grafana dashboards covering:
 *   **Learner Journey SLOs**: Tracking diagnostic completion and lesson efficacy.
 *   **LLM Provider Health**: Latency and success rates across providers.
 *   **Constitutional Health**: Approval rates and violation trends.
+*   **Centralised Logs**: Integrated Grafana Loki and Promtail for unified log aggregation.
 
 ---
 

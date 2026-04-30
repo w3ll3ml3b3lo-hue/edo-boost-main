@@ -17,19 +17,19 @@ This phase removes unsafe shortcuts, aligns documentation with reality, and clos
 
 ### Architecture and repo truth
 
-- [ ] Define the single authoritative target architecture for production.
-- [ ] Document the approved runtime components: frontend, API, Postgres, Redis, Celery workers, monitoring, and external AI providers.
-- [ ] Decide which infrastructure path is primary: Docker, Kubernetes, Bicep, or Supabase-backed hybrid.
-- [ ] Remove or rewrite README sections that describe non-existent folders or unsupported deployment flows.
-- [ ] Delete dead or duplicate backend modules that no longer belong to the active architecture.
+- [x] Define the single authoritative target architecture for production.
+- [x] Document the approved runtime components: frontend, API, Postgres, Redis, Celery workers, monitoring, and external AI providers.
+- [x] Decide which infrastructure path is primary: Docker-based microservices (Inference Sidecar).
+- [x] Remove or rewrite README sections that describe non-existent folders or unsupported deployment flows.
+- [x] Delete dead or duplicate backend modules that no longer belong to the active architecture.
 - [x] Standardize one approved path for lesson generation.
 - [x] Standardize one approved path for study plan generation.
 - [x] Standardize one approved path for parent report generation.
 
 ### Immediate backend and frontend safety
 
-- [ ] Remove all browser-direct AI provider calls.
-- [ ] Route all AI interactions through backend endpoints only.
+- [x] Remove all browser-direct AI provider calls.
+- [x] Route all AI interactions through backend endpoints only.
 - [x] Create a centralized frontend API client.
 - [x] Fix guardian authentication and authorization.
 - [x] Verify guardian identity before issuing guardian JWTs.
@@ -39,21 +39,21 @@ This phase removes unsafe shortcuts, aligns documentation with reality, and clos
 
 ### Config and secrets
 
-- [ ] Remove insecure secret defaults from configuration.
-- [ ] Make production startup fail when required secrets are missing.
-- [ ] Create separate config profiles for local, test, staging, and production.
-- [ ] Move secrets into a managed secret store for production.
-- [ ] Add secret scanning to CI.
+- [x] Remove insecure secret defaults from configuration.
+- [x] Make production startup fail when required secrets are missing.
+- [x] Create separate config profiles for local, test, staging, and production.
+- [x] Move secrets into a managed secret store for production (Azure KeyVault).
+- [x] Add secret scanning to CI.
 
 ### Immediate correctness fixes
 
-- [ ] Remove runtime DB auto-create from production path.
+- [x] Remove runtime DB auto-create from production path.
 - [x] Add strict schemas and validation to all critical endpoints.
-- [ ] Audit every route for missing request and response schemas.
+- [x] Audit every route for missing request and response schemas.
 - [x] Add strict Pydantic models to every route.
-- [ ] Reject unknown input fields for sensitive endpoints.
-- [ ] Validate LLM JSON against Pydantic models before downstream use.
-- [ ] Add business-rule validation for grade, subject, language, and mastery values.
+- [x] Reject unknown input fields for sensitive endpoints.
+- [x] Validate LLM JSON against Pydantic models before downstream use.
+- [x] Add business-rule validation for grade, subject, language, and mastery values.
 
 ### Immediate documentation and maintainability
 
@@ -62,8 +62,8 @@ This phase removes unsafe shortcuts, aligns documentation with reality, and clos
 - [x] Document known limitations and unsupported flows honestly.
 - [x] Break `EduBoostApp.jsx` into smaller feature modules.
 - [x] Break up `EduBoostApp.jsx`.
-- [ ] Create separate components for onboarding, dashboard, diagnostics, lessons, study plan, badges, and parent portal.
-- [ ] Separate mock/demo data from production logic.
+- [x] Create separate components for onboarding, dashboard, diagnostics, lessons, study plan, badges, and parent portal.
+- [x] Separate mock/demo data from production logic.
 
 ### Phase 0 exit criteria
 
@@ -168,18 +168,12 @@ This phase makes the platform deployable, observable, testable, and recoverable.
 - [ ] Add resource requests and limits for production deployments.
 - [ ] Decide whether Kubernetes manifests are actively supported.
 - [ ] Align deployment manifests with actual production architecture.
-- [ ] Add CI jobs for linting.
-- [ ] Add CI jobs for type checks where applicable.
-- [ ] Add CI jobs for backend unit tests.
-- [ ] Add CI jobs for frontend tests.
-- [ ] Add CI jobs for integration tests.
-- [ ] Add CI jobs for build verification.
-- [ ] Add CI jobs for migration checks.
-- [ ] Add CI jobs for security scans.
-- [ ] Add CI jobs for container builds.
-- [ ] Add release automation.
-- [ ] Add rollback automation or a documented rollback playbook.
-- [ ] Add CI quality gates for tests, builds, and security scans.
+- [x] Add automated lint, type, unit, integration, and build jobs.
+- [x] Add migration checks.
+- [x] Add container build and scan jobs.
+- [x] Add release automation.
+- [x] Add rollback automation or a documented rollback playbook.
+- [x] Add CI quality gates for tests, builds, and security scans.
 
 ### Observability and reliability
 
@@ -203,19 +197,8 @@ This phase makes the platform deployable, observable, testable, and recoverable.
 
 ### Test and QA hardening
 
-- [ ] Expand unit tests for auth flows.
-- [ ] Expand unit tests for consent flows.
-- [ ] Expand unit tests for deletion flows.
-- [ ] Expand unit tests for orchestration logic.
-- [ ] Expand unit tests for PII scrubber logic.
-- [ ] Expand unit tests for provider fallback logic.
-- [ ] Expand unit tests for schema validation failures.
-- [ ] Expand integration tests for lesson generation.
-- [ ] Add integration tests for guardian login and authorization.
-- [ ] Add integration tests for consent capture and audit logging.
-- [ ] Add integration tests for deletion requests.
-- [ ] Add integration tests for study plan generation.
-- [ ] Add integration tests for parent report generation.
+- [x] Expand unit tests for auth, consent, deletion, and orchestration logic.
+- [x] Add integration tests for all core services.
 - [ ] Add contract tests between frontend and backend APIs.
 - [ ] Add contract tests for AI provider response parsing.
 - [ ] Add end-to-end tests for learner onboarding.

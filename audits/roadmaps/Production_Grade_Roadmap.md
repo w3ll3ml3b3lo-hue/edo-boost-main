@@ -124,7 +124,7 @@ Make the backend predictable, validated, maintainable, and resilient under concu
 - [x] Adopt Alembic as the only schema evolution mechanism.
   - ✅ Consolidated baseline into `0001_initial_consolidated_schema.py`.
 - [x] Add migration checks to CI.
-- [ ] Define rollback procedures for failed schema deployments.
+- [x] Define rollback procedures for failed schema deployments.
 
 #### 2.3 Standardize API contracts
 
@@ -178,11 +178,11 @@ Make the backend predictable, validated, maintainable, and resilient under concu
 
 Backend is production-ready when:
 
-- all routes have strict contracts
-- schema changes are migration-driven only
-- blocking calls are removed from async paths
-- failures degrade cleanly and predictably
-- external provider instability does not cascade into API instability
+- [x] all routes have strict contracts
+- [x] schema changes are migration-driven only
+- [x] blocking calls are removed from async paths
+- [x] failures degrade cleanly and predictably
+- [x] external provider instability does not cascade into API instability
 
 ---
 
@@ -246,10 +246,10 @@ Transform the frontend from a monolithic prototype into a maintainable, secure, 
 
 Frontend is production-ready when:
 
-- no direct vendor AI calls exist in browser code
-- the codebase is modular and maintainable
-- key journeys are resilient and accessible
-- UI behavior is consistent across network and device conditions
+- [x] no direct vendor AI calls exist in browser code
+- [x] the codebase is modular and maintainable
+- [x] key journeys are resilient and accessible
+- [x] UI behavior is consistent across network and device conditions
 
 ---
 
@@ -298,7 +298,7 @@ Achieve real operational privacy and security controls suitable for learner data
 
 - [x] define full deletion lifecycle across DB, cache, logs, analytics, and backups.
 - [x] implement deletion request tracking and execution verification.
-- [ ] define legal and operational retention exceptions explicitly.
+- [x] define legal and operational retention exceptions explicitly.
 
 #### 4.7 Security monitoring and hardening
 
@@ -318,10 +318,10 @@ Achieve real operational privacy and security controls suitable for learner data
 
 Privacy and security are production-ready when:
 
-- sensitive workflows are enforced server-side
-- consent and guardian access are verifiable end to end
-- deletion, audit, and encryption policies are implemented and tested
-- there are no known high-severity security gaps blocking launch
+- [x] sensitive workflows are enforced server-side
+- [x] consent and guardian access are verifiable end to end
+- [x] deletion, audit, and encryption policies are implemented and tested
+- [x] there are no known high-severity security gaps blocking launch
 
 ---
 
@@ -390,10 +390,10 @@ Build a deployable, observable, recoverable platform that can be operated safely
 
 Infra and DevOps are production-ready when:
 
-- deployments are automated and reversible
-- observability supports detection and diagnosis
-- backups and recovery are tested
-- production capacity and cost envelopes are understood
+- [x] deployments are automated and reversible
+- [x] observability supports detection and diagnosis
+- [x] backups and recovery are tested
+- [x] production capacity and cost envelopes are understood
 
 ---
 

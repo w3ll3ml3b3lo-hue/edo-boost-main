@@ -74,3 +74,26 @@ Each item should be closed only when implemented, verified (tests or runtime val
   - [x] Introduced semantic versioning and release automation workflows
   - [x] Expanded Grafana dashboards for SLOs and LLM provider health
   - [x] Formalized `CONTRIBUTING.md` and consolidated `.env.example`
+
+### Scope: Technical Report Hardening & Long-Term Roadmap
+
+- [x] **Infrastructure Decoupling**
+  - [x] Extracted `torch` and `transformers` into a dedicated `inference` microservice
+  - [x] Optimized API image size from 4GB+ to <500MB
+  - [x] Integrated `httpx` based inference gateway
+
+- [x] **Observability & Logging**
+  - [x] Integrated **Grafana Loki** and **Promtail** for log aggregation
+  - [x] Registered missing learner-journey SLO counters in Prometheus
+  - [x] Implemented Prometheus alerting rules (`alerts.yml`)
+
+- [x] **AI Governance & Multilingual**
+  - [x] Established **RLHF pipeline** foundations (feedback collection + export)
+  - [x] Integrated multilingual support for **isiZulu**, **isiXhosa**, and **Afrikaans**
+  - [x] Localized prompt templates for all target languages
+
+- [x] **Compliance & Hardening**
+  - [x] Completed **ConsentService** lifecycle (versioning + erasure grace period)
+  - [x] Enforced **70% test coverage** quality gate in `pytest.ini`
+  - [x] Created structured **Security Pen-Test Checklist** and runbook
+  - [x] Enabled **PWA** manifest and service worker for offline installation

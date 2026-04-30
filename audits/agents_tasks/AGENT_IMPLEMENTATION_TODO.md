@@ -1,7 +1,7 @@
 # Agent Implementation TODO
 
-## 🏁 Current Milestone: Durable Audit & System Hardening (COMPLETED)
-All 10 recommendations from System Status Report #2 have been implemented.
+## 🏁 Current Milestone: Production Hardening & Long-Term Roadmap (COMPLETED)
+All recommendations from the Technical Assessment Report (#15) have been implemented.
 
 - [x] **Alembic Baseline**: Consolidated all schema management.
 - [x] **Consent Gating**: Backend-enforced POPIA checkpoints.
@@ -20,15 +20,15 @@ The following tasks are targeted for the next phase of development.
 
 ### 2. Pedagogy & Content Hardening
 - [ ] Formalize CAPS-alignment validation rules for Grade 4-7.
-- [ ] Implement multi-language lesson generation for Zulu and Xhosa.
+- [x] Implement multi-language lesson generation for Zulu, Xhosa and Afrikaans.
 - [ ] Expand the IRT Item Bank with calibrated CAPS items.
 
 ### 3. Frontend UX & Accessibility
 - [ ] Conduct WCAG 2.1 accessibility audit for the Learner Dashboard.
-- [ ] Implement "Offline First" lesson synchronization.
+- [x] Implement "Offline First" lesson synchronization (PWA).
 - [ ] Enhance Parent Portal with downloadable progress PDF reports.
 
 ### 4. AI Governance
-- [ ] Implement prompt versioning and A/B testing framework.
-- [ ] Add RLHF (Reinforcement Learning from Human Feedback) loop for lesson quality.
-- [ ] Integrate real-time content moderation for LLM outputs.
+- [x] Implement prompt versioning and A/B testing framework (PromptManager).
+- [x] Add RLHF (Reinforcement Learning from Human Feedback) loop for lesson quality.
+- [x] Integrate real-time content moderation for LLM outputs (Judiciary).
