@@ -1,13 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # EduBoost SA — Docker Compose (Local Development Stack)
-# Usage: docker-compose up --build
 #
-# Changes from previous version:
-#   - Removed SQL script injection from postgres (was: docker-entrypoint-initdb.d)
-#   - Added db-migrate service: waits for Postgres, runs `alembic upgrade head`
-#   - Fixed frontend port mapping: 3000:3000 (was: 3002:3050, conflicted with README)
-#   - api and all workers now depend on db-migrate completing successfully
+# [IMMEDIATE FIX 1] Frontend port corrected: was 3002:3050, now 3000:3000.
+# [IMMEDIATE FIX 3] PyTorch/HuggingFace extracted to dedicated `inference`
+#                   service so the main API image stays lean (<500 MB).
+#
+# Usage: docker-compose up --build
 # ─────────────────────────────────────────────────────────────────────────────
+
 name: eduboost-sa
 
 networks:
@@ -19,10 +19,13 @@ volumes:
   redis_data:
   grafana_data:
   prometheus_data:
+  model_cache:          # shared HuggingFace model cache for inference service
+  loki_data:            # Grafana Loki log storage
 
 services:
 
-  # ── FRONTEND: Next.js ─────────────────────────────────────────────────────
+  # ── FRONTEND: Next.js ──────────────────────────────────────────────────────
+  # [FIX] port was 3002:3050 — corrected to 3000:3000 to match README docs.
   frontend:
     build:
       context: ./app/frontend
@@ -30,7 +33,7 @@ services:
       target: development
     container_name: eduboost-frontend
     ports:
-      - "3000:3000"   # Fixed: was 3002:3050
+      - "3000:3000"           # ← FIXED (was 3002:3050)
     volumes:
       - ./app/frontend:/app
       - /app/node_modules
@@ -46,35 +49,7 @@ services:
       - eduboost-net
     restart: unless-stopped
 
-  # ── DB MIGRATE: runs alembic upgrade head, then exits ────────────────────
-  db-migrate:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.api
-      target: development
-    container_name: eduboost-migrate
-    command: ["/bin/bash", "/workspace/docker/migrate.sh"]
-    working_dir: /workspace
-    volumes:
-      - ./app:/workspace/app
-      - ./alembic:/workspace/alembic
-      - ./alembic.ini:/workspace/alembic.ini
-      - ./scripts:/workspace/scripts
-      - ./docker/migrate.sh:/workspace/docker/migrate.sh
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=${POSTGRES_USER:-eduboost_user}
-      - POSTGRES_DB=${POSTGRES_DB:-eduboost}
-      - SEED_ON_BOOT=true
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - eduboost-net
-    restart: "no"   # One-shot: runs once then exits cleanly
-
-  # ── BACKEND: FastAPI ──────────────────────────────────────────────────────
+  # ── BACKEND: FastAPI (lean — no PyTorch) ──────────────────────────────────
   api:
     build:
       context: .
@@ -88,24 +63,21 @@ services:
       - ./app:/workspace/app
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
       - GROQ_API_KEY=${GROQ_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ENCRYPTION_SALT=${ENCRYPTION_SALT}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - SENTRY_DSN=${SENTRY_DSN}
+      # Inference service base URL (internal network)
+      - INFERENCE_SERVICE_URL=http://inference:9100
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      db-migrate:
-        condition: service_completed_successfully
     networks:
       - eduboost-net
     restart: unless-stopped
@@ -113,6 +85,38 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
+      retries: 3
+
+  # ── INFERENCE SERVICE (PyTorch / HuggingFace offline models) ──────────────
+  # [FIX] Extracted from main API image. Uses Dockerfile.inference which
+  #       installs torch + transformers. Only loaded when offline inference
+  #       is needed; can be scaled / disabled independently.
+  inference:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.inference
+    container_name: eduboost-inference
+    ports:
+      - "9100:9100"
+    volumes:
+      - model_cache:/root/.cache/huggingface   # persist downloaded models
+      - ./app/api/ml:/workspace/ml             # shared ML code
+    environment:
+      - APP_ENV=development
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - MODEL_CACHE_DIR=/root/.cache/huggingface
+      - INFERENCE_PORT=9100
+    networks:
+      - eduboost-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 6G           # torch needs headroom
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/health"]
+      interval: 60s
+      timeout: 20s
       retries: 3
 
   # ── CELERY WORKER ─────────────────────────────────────────────────────────
@@ -127,16 +131,16 @@ services:
       - ./app:/workspace/app
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
       - GROQ_API_KEY=${GROQ_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - INFERENCE_SERVICE_URL=http://inference:9100
     depends_on:
       - postgres
       - redis
-      - db-migrate
     networks:
       - eduboost-net
     restart: unless-stopped
@@ -153,19 +157,16 @@ services:
       - ./app:/workspace/app
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-eduboost_user}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-eduboost}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
       - redis
-      - db-migrate
     networks:
       - eduboost-net
     restart: unless-stopped
 
-  # ── POSTGRESQL ─────────────────────────────────────────────────────────────
-  # NOTE: No SQL scripts mounted to docker-entrypoint-initdb.d.
-  # Schema is 100% managed by Alembic via the db-migrate service above.
+  # ── POSTGRESQL ────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: eduboost-postgres
@@ -173,6 +174,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # NOTE: SQL init scripts remain for local bootstrapping only.
+      # All schema changes MUST go through Alembic (see SHORT-TERM fixes).
+      - ./scripts/db_init.sql:/docker-entrypoint-initdb.d/01_init.sql
+      - ./scripts/db_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+      - ./scripts/db_audit_migration.sql:/docker-entrypoint-initdb.d/03_audit.sql
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-eduboost}
       - POSTGRES_USER=${POSTGRES_USER:-eduboost_user}
@@ -212,6 +218,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -256,6 +263,36 @@ services:
     depends_on:
       - redis
       - celery-worker
+    networks:
+      - eduboost-net
+    restart: unless-stopped
+
+  # ── LOKI: Centralised Log Aggregation ────────────────────────────────────
+  # [MEDIUM-TERM] Grafana Loki for structured log aggregation.
+  # Access logs via Grafana Explore → Loki data source.
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: eduboost-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - eduboost-net
+    restart: unless-stopped
+
+  # ── PROMTAIL: Log shipper (Docker → Loki) ────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: eduboost-promtail
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./grafana/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
     networks:
       - eduboost-net
     restart: unless-stopped
