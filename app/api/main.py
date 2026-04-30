@@ -28,6 +28,7 @@ from app.api.routers import (
     audit,
 )
 from app.api.routers import assessments
+from app.api.fourth_estate import fourth_estate
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -104,7 +105,15 @@ async def lifespan(app: FastAPI):
         import asyncio
 
         asyncio.create_task(dummy_data_service.run_startup_generation())
+    
+    # Connect to Fourth Estate (RabbitMQ)
+    await fourth_estate.connect()
+
     yield
+    
+    # Shutdown Fourth Estate
+    await fourth_estate.close()
+    
     log.info("EduBoost SA API shutting down")
 
 

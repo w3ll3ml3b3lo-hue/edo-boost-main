@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-import structlog
+import json
+import logging
+import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+import aio_pika
+import structlog
+from pydantic import BaseModel
 
 from app.api.constitutional_schema.types import (
     AuditEvent,
@@ -12,6 +18,7 @@ from app.api.constitutional_schema.types import (
     JudiciaryStamp,
     StampStatus,
 )
+from app.api.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -19,160 +26,203 @@ _fourth_estate: Optional["FourthEstate"] = None
 
 
 class FourthEstate:
+    """
+    Durable Audit Trail Service (Pillar 4).
+    Migrated from Redis Streams to RabbitMQ for POPIA-grade persistence.
+    Maintains an in-memory buffer for recent event queries.
+    """
+
     def __init__(
         self,
-        redis_url: Optional[str] = None,
-        stream_key: str = "eduboost:audit",
-        cb_threshold: int = 3,
-        cb_recovery_timeout: int = 30,
+        rabbitmq_url: Optional[str] = None,
+        exchange_name: str = "eduboost_audit_log",
+        buffer_size: int = 1000,
     ) -> None:
-        self.redis_url = redis_url
-        self.stream_key = stream_key
-        self._buffer: deque[AuditEvent] = deque(maxlen=1000)
+        self.rabbitmq_url = rabbitmq_url or settings.RABBITMQ_URL
+        self.exchange_name = exchange_name
+        self._buffer: deque[AuditEvent] = deque(maxlen=buffer_size)
         self._total_events = 0
         self._violations = 0
         self._sequence = 0
-        self._redis: Any = None
+        self._connection: Optional[aio_pika.RobustConnection] = None
+        self._channel: Optional[aio_pika.RobustChannel] = None
+        self._exchange: Optional[aio_pika.RobustExchange] = None
 
-        # Circuit Breaker state
-        self._cb_state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
-        self._cb_failure_count = 0
-        self._cb_threshold = cb_threshold
-        self._cb_recovery_timeout = cb_recovery_timeout
-        self._cb_last_failure_time: Optional[datetime] = None
+    async def connect(self) -> None:
+        """Establish connection to RabbitMQ."""
+        if not self.rabbitmq_url:
+            logger.warning("rabbitmq_url_missing", detail="Fourth Estate will not be able to publish events")
+            return
+
+        if not self._connection or self._connection.is_closed:
+            try:
+                self._connection = await aio_pika.connect_robust(self.rabbitmq_url)
+                self._channel = await self._connection.channel()
+                # Declare a fanout exchange for durability and broadcasting
+                self._exchange = await self._channel.declare_exchange(
+                    self.exchange_name,
+                    aio_pika.ExchangeType.FANOUT,
+                    durable=True,
+                )
+                logger.info("connected_to_fourth_estate", url=self.rabbitmq_url, exchange=self.exchange_name)
+            except Exception as e:
+                logger.error("fourth_estate_connection_failed", error=str(e))
+
+    async def close(self) -> None:
+        """Close RabbitMQ connection."""
+        if self._connection:
+            await self._connection.close()
+            logger.info("fourth_estate_connection_closed")
 
     def get_stats(self) -> dict:
         return {
             "total_events": self._total_events,
             "violations": self._violations,
             "buffer_size": len(self._buffer),
-            "stream_key": self.stream_key,
-            "circuit_breaker_state": self._cb_state,
+            "exchange_name": self.exchange_name,
+            "connected": self._connection is not None and not self._connection.is_closed,
         }
 
     def get_sequence(self) -> int:
         """Return the current audit event sequence number."""
         return self._sequence
 
-    async def _try_redis_publish(self, event: AuditEvent) -> bool:
-        if not self.redis_url:
-            return False
-
-        try:
-            import redis.asyncio as redis_lib
-
-            if self._redis is None:
-                self._redis = redis_lib.from_url(self.redis_url, decode_responses=True)
-
-            await self._redis.xadd(
-                self.stream_key,
-                {"payload": str(event.model_dump(mode="json"))},
-                maxlen=10_000,
-                approximate=True,
-            )
-            return True
-        except Exception as e:
-            logger.error("redis_publish_failed", error=str(e), event_id=event.event_id)
-            return False
-
     async def publish(self, event: AuditEvent) -> None:
+        """Publishes an immutable audit event to the durable broker and local buffer."""
         self._total_events += 1
         self._sequence += 1
         self._buffer.append(event)
 
-        # Handle Circuit Breaker State Transitions
-        if self._cb_state == "OPEN":
-            if self._cb_last_failure_time and (
-                datetime.now(timezone.utc) - self._cb_last_failure_time
-            ).total_seconds() > self._cb_recovery_timeout:
-                self._cb_state = "HALF_OPEN"
-                logger.info("circuit_breaker_half_open", reason="recovery_timeout_reached")
-            else:
-                logger.warning("circuit_breaker_open_skipping_redis", event_id=event.event_id)
-                return
+        if not self._exchange:
+            await self.connect()
 
-        # Attempt Redis publish if CLOSED or HALF_OPEN
-        success = await self._try_redis_publish(event)
+        if self._exchange:
+            try:
+                # Use model_dump_json() if it's a Pydantic model
+                payload = event.model_dump_json() if isinstance(event, BaseModel) else json.dumps(event)
+                message_body = payload.encode()
+                
+                message = aio_pika.Message(
+                    body=message_body,
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,  # Ensure persistence on disk
+                    content_type="application/json",
+                    timestamp=int(event.occurred_at.timestamp()) if hasattr(event, "occurred_at") else int(datetime.now(timezone.utc).timestamp()),
+                )
 
-        if success:
-            if self._cb_state == "HALF_OPEN":
-                self._cb_state = "CLOSED"
-                self._cb_failure_count = 0
-                logger.info("circuit_breaker_closed", reason="successful_half_open_probe")
-            elif self._cb_state == "CLOSED":
-                self._cb_failure_count = 0
+                await self._exchange.publish(message, routing_key="")
+                logger.debug("audit_event_published", event_id=getattr(event, "event_id", "unknown"))
+            except Exception as e:
+                logger.error("audit_publish_failed", error=str(e), event_id=getattr(event, "event_id", "unknown"))
         else:
-            self._cb_failure_count += 1
-            self._cb_last_failure_time = datetime.now(timezone.utc)
+            logger.warning("audit_publish_skipped_no_connection", event_id=getattr(event, "event_id", "unknown"))
 
-            if self._cb_state == "CLOSED" and self._cb_failure_count >= self._cb_threshold:
-                self._cb_state = "OPEN"
-                logger.error("circuit_breaker_opened", failure_count=self._cb_failure_count)
-            elif self._cb_state == "HALF_OPEN":
-                self._cb_state = "OPEN"
-                logger.error("circuit_breaker_reopened", reason="half_open_probe_failed")
+    async def publish_event(self, event: Any) -> None:
+        """Compatibility method for the new FourthEstateService API."""
+        if isinstance(event, AuditEvent):
+            await self.publish(event)
+        else:
+            # If it's a different model (like the one in the provided file), try to adapt it
+            # or just publish it as is if it's a dict/BaseModel
+            self._total_events += 1
+            if self._exchange:
+                try:
+                    payload = event.model_dump_json() if hasattr(event, "model_dump_json") else json.dumps(event)
+                    message = aio_pika.Message(
+                        body=payload.encode(),
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                        content_type="application/json",
+                    )
+                    await self._exchange.publish(message, routing_key="")
+                except Exception as e:
+                    logger.error("audit_publish_failed", error=str(e))
 
-    async def publish_action_submitted(self, action: ExecutiveAction) -> None:
+    async def publish_action_submitted(self, action: Any) -> None:
+        """Publishes an action submission event. Handles multiple model versions."""
+        action_id = getattr(action, "action_id", str(uuid.uuid4()))
+        learner_hash = getattr(action, "learner_id_hash", getattr(action, "learner_pseudonym", "unknown"))
+        intent = getattr(action, "action_type", getattr(action, "intent", "unknown"))
+        if hasattr(intent, "value"):
+            intent = intent.value
+            
         await self.publish(
             AuditEvent(
                 event_type=EventType.ACTION_SUBMITTED,
                 pillar="EXECUTIVE",
-                action_id=action.action_id,
-                learner_hash=action.learner_id_hash,
-                payload={"action_type": action.action_type.value},
+                action_id=action_id,
+                learner_hash=learner_hash,
+                payload={"action_type": intent},
             )
         )
 
     async def publish_stamp_issued(
-        self, stamp: JudiciaryStamp, action: ExecutiveAction
+        self, stamp: Any, action: Any
     ) -> None:
+        """Publishes a stamp issuance event. Handles multiple model versions."""
+        action_id = getattr(action, "action_id", str(uuid.uuid4()))
+        learner_hash = getattr(action, "learner_id_hash", getattr(action, "learner_pseudonym", "unknown"))
+        
+        status = getattr(stamp, "status", getattr(stamp, "verdict", "unknown"))
+        if hasattr(status, "value"):
+            status = status.value
+            
+        violations = getattr(stamp, "violations", getattr(stamp, "rules_checked", []))
+        
         await self.publish(
             AuditEvent(
                 event_type=EventType.STAMP_ISSUED,
                 pillar="JUDICIARY",
-                action_id=action.action_id,
-                learner_hash=action.learner_id_hash,
-                payload={"status": stamp.status.value, "violations": stamp.violations},
+                action_id=action_id,
+                learner_hash=learner_hash,
+                payload={"status": status, "violations": violations},
             )
         )
-        if stamp.status == StampStatus.REJECTED:
+        if status == "REJECTED":
             await self.publish(
                 AuditEvent(
                     event_type=EventType.STAMP_REJECTED,
                     pillar="JUDICIARY",
-                    action_id=action.action_id,
-                    learner_hash=action.learner_id_hash,
-                    payload={"violations": stamp.violations},
+                    action_id=action_id,
+                    learner_hash=learner_hash,
+                    payload={"violations": violations},
                 )
             )
             await self.flag_constitutional_violation(
-                action=action, stamp=stamp, violated_rules=list(stamp.violations)
+                action=action, stamp=stamp, violated_rules=list(violations)
             )
 
     async def flag_constitutional_violation(
-        self, action: ExecutiveAction, stamp: JudiciaryStamp, violated_rules: list[str]
+        self, action: Any, stamp: Any, violated_rules: list[str]
     ) -> None:
         self._violations += 1
+        action_id = getattr(action, "action_id", str(uuid.uuid4()))
+        learner_hash = getattr(action, "learner_id_hash", getattr(action, "learner_pseudonym", "unknown"))
+        status = getattr(stamp, "status", getattr(stamp, "verdict", "unknown"))
+        if hasattr(status, "value"):
+            status = status.value
+
         await self.publish(
             AuditEvent(
                 event_type=EventType.CONSTITUTIONAL_VIOL,
                 pillar="JUDICIARY",
-                action_id=action.action_id,
-                learner_hash=action.learner_id_hash,
-                payload={"rules": violated_rules, "stamp": stamp.status.value},
+                action_id=action_id,
+                learner_hash=learner_hash,
+                payload={"rules": violated_rules, "stamp": status},
             )
         )
 
     async def publish_llm_result(
-        self, action: ExecutiveAction, provider: str, success: bool, latency_ms: int
+        self, action: Any, provider: str, success: bool, latency_ms: int
     ) -> None:
         et = EventType.LLM_CALL_COMPLETED if success else EventType.LLM_CALL_FAILED
+        action_id = getattr(action, "action_id", str(uuid.uuid4()))
+        learner_hash = getattr(action, "learner_id_hash", getattr(action, "learner_pseudonym", "unknown"))
+        
         await self.publish(
             AuditEvent(
                 event_type=et,
                 pillar="EXECUTIVE",
-                action_id=action.action_id,
-                learner_hash=action.learner_id_hash,
+                action_id=action_id,
+                learner_hash=learner_hash,
                 payload={"provider": provider, "latency_ms": latency_ms},
             )
         )
@@ -191,14 +241,17 @@ class FourthEstate:
         )
 
     async def publish_domain_event(
-        self, event_type: EventType, action: ExecutiveAction, payload: dict[str, Any]
+        self, event_type: EventType, action: Any, payload: dict[str, Any]
     ) -> None:
+        action_id = getattr(action, "action_id", str(uuid.uuid4()))
+        learner_hash = getattr(action, "learner_id_hash", getattr(action, "learner_pseudonym", "unknown"))
+
         await self.publish(
             AuditEvent(
                 event_type=event_type,
                 pillar="EXECUTIVE",
-                action_id=action.action_id,
-                learner_hash=action.learner_id_hash,
+                action_id=action_id,
+                learner_hash=learner_hash,
                 payload=payload,
             )
         )
@@ -256,10 +309,9 @@ class FourthEstate:
 def get_fourth_estate() -> FourthEstate:
     global _fourth_estate
     if _fourth_estate is None:
-        from app.api.core.config import settings
-
-        _fourth_estate = FourthEstate(
-            redis_url=settings.REDIS_URL,
-            stream_key=settings.FOURTH_ESTATE_STREAM_KEY,
-        )
+        _fourth_estate = FourthEstate()
     return _fourth_estate
+
+
+# Global instance for easy access (as requested in the provided file)
+fourth_estate = get_fourth_estate()

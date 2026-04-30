@@ -125,8 +125,13 @@ class WorkerAgent(ABC):
                 f"ExecutiveAction {action.action_id} has invalid HMAC signature."
             )
 
+        from app.api.fourth_estate import fourth_estate
+        await fourth_estate.publish_action_submitted(action)
+
         client = JudiciaryClient()
         stamp = await client.review(action)
+
+        await fourth_estate.publish_stamp_issued(stamp, action)
 
         if stamp.verdict != "APPROVED":
             raise UnauthorizedExecutionError(

@@ -42,6 +42,7 @@ joblib==1.4.2
 redis[hiredis]==5.0.4
 celery[redis]==5.4.0
 flower==2.0.1
+aio-pika>=9.4.0
 
 # Email and storage
 sendgrid==6.11.0
