@@ -1,213 +1,270 @@
 """
 app/api/services/consent_service.py
+────────────────────────────────────
+[SHORT-TERM FIX 6] Full parental consent lifecycle service.
 
-Service layer for parental consent management.
-
-All learner-data-touching operations MUST call require_active_consent()
-before proceeding.  This is the single enforcement point for POPIA compliance.
+Implements POPIA ss.11, 13, 18, 23 requirements:
+  - Explicit, informed, documented consent before any learner data processing
+  - Consent versioning (new consent required when policy changes)
+  - Consent withdrawal with immediate data processing suspension
+  - Right to erasure with 30-day grace period
+  - Complete audit trail for every consent event
 """
+
 from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
+import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.models.consent import ConsentStatus, ParentalConsent
-from app.api.models.learner import Learner  # noqa: F401 (for type hints)
+from app.api.models.consent import ParentalConsent
+from app.api.models.deletion import DeletionRequest
+from app.api.models.guardian import Guardian
+from app.api.models.learner import Learner
+from app.api.services.audit_service import AuditService
+
+log = structlog.get_logger()
+
+# Current version of the consent document — bump this string whenever the
+# privacy policy or consent terms change. All existing consents for prior
+# versions are automatically invalidated, forcing re-consent.
+CURRENT_CONSENT_VERSION = "v1.0-2026-05"
+
+# POPIA s.14: data subjects must have a reasonable period to exercise rights
+# before deletion is executed. 30 days is the standard grace period.
+DELETION_GRACE_PERIOD_DAYS = 30
 
 
-class ConsentNotGrantedError(Exception):
-    """Raised when learner data is requested without active parental consent."""
-
-    def __init__(self, learner_id: uuid.UUID) -> None:
-        self.learner_id = learner_id
-        super().__init__(
-            f"Active parental consent is required before accessing data for "
-            f"learner {learner_id}.  Guardian must grant consent at /api/v1/consent/grant."
-        )
+def _hash(value: str) -> str:
+    """SHA-256 hash for PII fields stored in the DB (email, phone, IP)."""
+    return hashlib.sha256(value.strip().lower().encode()).hexdigest()
 
 
 class ConsentService:
-    """
-    All methods are async and accept an AsyncSession injected via FastAPI
-    dependency injection.
+    def __init__(self, db: AsyncSession, audit: AuditService):
+        self.db = db
+        self.audit = audit
 
-    Usage in a router:
-
-        from app.api.services.consent_service import ConsentService, ConsentNotGrantedError
-        from app.api.core.db import get_db
-
-        @router.get("/learners/{learner_id}/lessons")
-        async def get_lessons(learner_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-            await ConsentService.require_active_consent(db, learner_id)
-            ...
-    """
-
-    # ── Static helpers ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _hash(value: str) -> str:
-        """One-way SHA-256 hash for IP addresses and user-agents."""
-        return hashlib.sha256(value.encode()).hexdigest()
-
-    # ── Read ──────────────────────────────────────────────────────────────
-
-    @staticmethod
-    async def get_consent(
-        db: AsyncSession,
-        learner_id: uuid.UUID,
+    # ── Grant consent ─────────────────────────────────────────────────────────
+    async def grant_consent(
+        self,
         guardian_id: uuid.UUID,
-    ) -> Optional[ParentalConsent]:
-        result = await db.execute(
-            select(ParentalConsent).where(
-                ParentalConsent.learner_id == learner_id,
-                ParentalConsent.guardian_id == guardian_id,
-            )
-        )
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def get_active_consent_for_learner(
-        db: AsyncSession, learner_id: uuid.UUID
-    ) -> Optional[ParentalConsent]:
-        """Return the active consent record for a learner (any guardian), or None."""
-        result = await db.execute(
-            select(ParentalConsent).where(
-                ParentalConsent.learner_id == learner_id,
-                ParentalConsent.status == ConsentStatus.granted,
-                # Exclude expired rows
-                (ParentalConsent.expires_at == None)  # noqa: E711
-                | (ParentalConsent.expires_at > datetime.now(tz=timezone.utc)),
-            )
-        )
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def require_active_consent(
-        db: AsyncSession, learner_id: uuid.UUID
+        learner_id: uuid.UUID,
+        ip_address: str,
+        user_agent: str,
+        consent_version: str = CURRENT_CONSENT_VERSION,
     ) -> ParentalConsent:
         """
-        POPIA enforcement gate.
+        Record explicit, informed consent from a guardian for a learner.
 
-        Call this at the top of every endpoint that reads or writes
-        learner personal data.  Raises ConsentNotGrantedError if no
-        active consent exists — FastAPI will convert this to a 403.
+        Called after the guardian has been shown and has acknowledged the
+        full consent document at the given consent_version.
         """
-        consent = await ConsentService.get_active_consent_for_learner(db, learner_id)
-        if consent is None:
-            raise ConsentNotGrantedError(learner_id)
-        return consent
+        # Verify guardian owns this learner
+        learner = await self._get_learner(learner_id, guardian_id)
+        if not learner:
+            raise ValueError("Learner not found or does not belong to this guardian")
 
-    # ── Write ─────────────────────────────────────────────────────────────
-
-    @staticmethod
-    async def create_pending(
-        db: AsyncSession,
-        learner_id: uuid.UUID,
-        guardian_id: uuid.UUID,
-        consent_version: str = "1.0",
-    ) -> ParentalConsent:
-        """Create a consent record in 'pending' state when a learner is registered."""
-        existing = await ConsentService.get_consent(db, learner_id, guardian_id)
+        # Check for existing active consent for this version
+        existing = await self._get_active_consent(learner_id, consent_version)
         if existing:
+            log.info("consent.already_granted", learner_id=str(learner_id), version=consent_version)
             return existing
 
         consent = ParentalConsent(
-            learner_id=learner_id,
+            id=uuid.uuid4(),
             guardian_id=guardian_id,
-            status=ConsentStatus.pending,
+            learner_id=learner_id,
             consent_version=consent_version,
+            ip_address_hash=_hash(ip_address),
+            user_agent=user_agent[:512] if user_agent else None,
+            consented_at=datetime.now(timezone.utc),
         )
-        db.add(consent)
-        await db.flush()
+        self.db.add(consent)
+        await self.db.flush()
+
+        await self.audit.record(
+            actor_id=guardian_id,
+            actor_type="guardian",
+            event_type="consent.granted",
+            resource_type="learner",
+            resource_id=learner_id,
+            payload={"consent_version": consent_version},
+            ip_address=ip_address,
+        )
+
+        log.info("consent.granted", learner_id=str(learner_id), version=consent_version)
         return consent
 
-    @staticmethod
-    async def grant(
-        db: AsyncSession,
-        learner_id: uuid.UUID,
+    # ── Withdraw consent ──────────────────────────────────────────────────────
+    async def withdraw_consent(
+        self,
         guardian_id: uuid.UUID,
-        *,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        consent_version: str = "1.0",
-    ) -> ParentalConsent:
+        learner_id: uuid.UUID,
+        reason: str | None = None,
+        ip_address: str = "",
+    ) -> None:
         """
-        Guardian grants consent.  Creates the record if it doesn't exist yet
-        (idempotent re-grant is allowed — e.g. annual renewal).
+        Withdraw all active consents for a learner.
+
+        POPIA s.11(3): withdrawal of consent must be as easy as granting it.
+        Processing of the learner's data is immediately suspended.
         """
-        consent = await ConsentService.get_consent(db, learner_id, guardian_id)
-        if consent is None:
-            consent = ParentalConsent(
-                learner_id=learner_id,
-                guardian_id=guardian_id,
+        result = await self.db.execute(
+            update(ParentalConsent)
+            .where(
+                ParentalConsent.learner_id == learner_id,
+                ParentalConsent.guardian_id == guardian_id,
+                ParentalConsent.withdrawn_at.is_(None),
             )
-            db.add(consent)
-
-        consent.mark_granted(
-            ip_hash=ConsentService._hash(ip_address) if ip_address else None,
-            user_agent_hash=ConsentService._hash(user_agent) if user_agent else None,
-            consent_version=consent_version,
-        )
-        await db.flush()
-        return consent
-
-    @staticmethod
-    async def revoke(
-        db: AsyncSession,
-        learner_id: uuid.UUID,
-        guardian_id: uuid.UUID,
-    ) -> ParentalConsent:
-        """Guardian revokes consent.  Learner data access is immediately blocked."""
-        consent = await ConsentService.get_consent(db, learner_id, guardian_id)
-        if consent is None:
-            raise ValueError(
-                f"No consent record found for learner {learner_id} / guardian {guardian_id}"
+            .values(
+                withdrawn_at=datetime.now(timezone.utc),
+                withdrawal_reason=reason,
             )
-        consent.mark_revoked()
-        await db.flush()
-        return consent
-
-    # ── Right to erasure ──────────────────────────────────────────────────
-
-    @staticmethod
-    async def execute_erasure(
-        db: AsyncSession,
-        learner_id: uuid.UUID,
-        guardian_id: uuid.UUID,
-    ) -> dict:
-        """
-        POPIA right-to-erasure workflow.
-
-        Steps performed atomically within the caller's transaction:
-          1. Revoke consent (blocks all further access immediately).
-          2. Soft-delete the learner row (sets deleted_at = now).
-          3. Cascade: study_plans and diagnostic_sessions are CASCADE-deleted by FK.
-          4. Returns a summary of what was erased for the audit log.
-
-        Callers MUST commit the transaction and write an audit_log entry
-        after this method returns.
-        """
-        # Step 1 — revoke consent
-        consent = await ConsentService.revoke(db, learner_id, guardian_id)
-
-        # Step 2 — soft-delete the learner record
-        result = await db.execute(
-            update(Learner)
-            .where(Learner.id == learner_id, Learner.deleted_at == None)  # noqa: E711
-            .values(deleted_at=datetime.now(tz=timezone.utc))
-            .returning(Learner.id, Learner.pseudonym_id)
+            .returning(ParentalConsent.id)
         )
-        row = result.fetchone()
+        withdrawn_ids = result.scalars().all()
 
-        return {
-            "learner_id": str(learner_id),
-            "pseudonym_id": row.pseudonym_id if row else None,
-            "consent_revoked_at": consent.revoked_at.isoformat(),
-            "learner_soft_deleted": row is not None,
-            "erasure_timestamp": datetime.now(tz=timezone.utc).isoformat(),
-        }
+        if not withdrawn_ids:
+            log.warning("consent.withdraw_not_found", learner_id=str(learner_id))
+            return
+
+        await self.audit.record(
+            actor_id=guardian_id,
+            actor_type="guardian",
+            event_type="consent.withdrawn",
+            resource_type="learner",
+            resource_id=learner_id,
+            payload={"withdrawn_consent_ids": [str(i) for i in withdrawn_ids], "reason": reason},
+            ip_address=ip_address,
+        )
+        log.info("consent.withdrawn", learner_id=str(learner_id), count=len(withdrawn_ids))
+
+    # ── Check active consent ──────────────────────────────────────────────────
+    async def has_active_consent(self, learner_id: uuid.UUID) -> bool:
+        """
+        Returns True only if an active, current-version consent exists.
+        Used as a gate in API routes before processing learner data.
+        """
+        consent = await self._get_active_consent(learner_id, CURRENT_CONSENT_VERSION)
+        return consent is not None
+
+    # ── Request right to erasure ──────────────────────────────────────────────
+    async def request_erasure(
+        self,
+        guardian_id: uuid.UUID,
+        learner_id: uuid.UUID | None = None,
+        scope: str = "learner",
+        reason: str | None = None,
+        ip_address: str = "",
+    ) -> DeletionRequest:
+        """
+        POPIA s.24: right to erasure / deletion.
+
+        Creates a deletion request with a 30-day grace period.
+        The actual data deletion is executed by the Celery task
+        `tasks.deletion.process_deletion_request` at `scheduled_for`.
+
+        scope:
+          "learner"  — delete a single learner's data
+          "guardian" — delete guardian account + all linked learners
+          "all"      — nuclear option: guardian + all learners + all data
+        """
+        # Immediately withdraw all consents
+        if learner_id:
+            await self.withdraw_consent(guardian_id, learner_id, reason="erasure_requested", ip_address=ip_address)
+
+        scheduled = datetime.now(timezone.utc) + timedelta(days=DELETION_GRACE_PERIOD_DAYS)
+        req = DeletionRequest(
+            id=uuid.uuid4(),
+            guardian_id=guardian_id,
+            learner_id=learner_id,
+            scope=scope,
+            reason=reason,
+            requested_at=datetime.now(timezone.utc),
+            scheduled_for=scheduled,
+            status="pending",
+        )
+        self.db.add(req)
+        await self.db.flush()
+
+        await self.audit.record(
+            actor_id=guardian_id,
+            actor_type="guardian",
+            event_type="erasure.requested",
+            resource_type="learner" if learner_id else "guardian",
+            resource_id=learner_id or guardian_id,
+            payload={"scope": scope, "scheduled_for": scheduled.isoformat(), "reason": reason},
+            ip_address=ip_address,
+        )
+
+        log.info(
+            "erasure.requested",
+            guardian_id=str(guardian_id),
+            learner_id=str(learner_id) if learner_id else None,
+            scope=scope,
+            scheduled_for=scheduled.isoformat(),
+        )
+        return req
+
+    # ── Cancel a pending erasure request ─────────────────────────────────────
+    async def cancel_erasure(
+        self,
+        guardian_id: uuid.UUID,
+        deletion_request_id: uuid.UUID,
+        ip_address: str = "",
+    ) -> None:
+        """Cancel an erasure request within the grace period."""
+        result = await self.db.execute(
+            update(DeletionRequest)
+            .where(
+                DeletionRequest.id == deletion_request_id,
+                DeletionRequest.guardian_id == guardian_id,
+                DeletionRequest.status == "pending",
+            )
+            .values(status="cancelled")
+            .returning(DeletionRequest.id)
+        )
+        if not result.scalar_one_or_none():
+            raise ValueError("Deletion request not found, not pending, or not owned by this guardian")
+
+        await self.audit.record(
+            actor_id=guardian_id,
+            actor_type="guardian",
+            event_type="erasure.cancelled",
+            resource_type="deletion_request",
+            resource_id=deletion_request_id,
+            payload={},
+            ip_address=ip_address,
+        )
+        log.info("erasure.cancelled", deletion_request_id=str(deletion_request_id))
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    async def _get_active_consent(
+        self, learner_id: uuid.UUID, version: str
+    ) -> ParentalConsent | None:
+        result = await self.db.execute(
+            select(ParentalConsent).where(
+                ParentalConsent.learner_id == learner_id,
+                ParentalConsent.consent_version == version,
+                ParentalConsent.withdrawn_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_learner(
+        self, learner_id: uuid.UUID, guardian_id: uuid.UUID
+    ) -> Learner | None:
+        result = await self.db.execute(
+            select(Learner).where(
+                Learner.id == learner_id,
+                Learner.guardian_id == guardian_id,
+                Learner.deleted_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
