@@ -52,13 +52,21 @@ class _MetricsListener(pybreaker.CircuitBreakerListener):
 # ---------------------------------------------------------------------------
 # Provider clients
 # ---------------------------------------------------------------------------
+def _messages(prompt: str, system_prompt: str = "") -> List[dict]:
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    return messages
+
+
 async def _call_groq(prompt: str, **kwargs) -> str:
     from groq import AsyncGroq
 
     client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
     completion = await client.chat.completions.create(
         model=os.environ.get("GROQ_MODEL", "llama3-70b-8192"),
-        messages=[{"role": "user", "content": prompt}],
+        messages=_messages(prompt, kwargs.get("system_prompt", "")),
         max_tokens=2048,
     )
     return completion.choices[0].message.content
@@ -71,6 +79,7 @@ async def _call_anthropic(prompt: str, **kwargs) -> str:
     message = await client.messages.create(
         model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
         max_tokens=2048,
+        system=kwargs.get("system_prompt") or None,
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text
@@ -149,7 +158,9 @@ class ProviderRouter:
 
         self._priority = [ProviderName.GROQ, ProviderName.ANTHROPIC, ProviderName.LOCAL]
 
-    async def complete(self, prompt: str, action_id: str = "", stamp_id: str = "") -> str:
+    async def complete(
+        self, prompt: str, system_prompt: str = "", action_id: str = "", stamp_id: str = ""
+    ) -> str:
         last_exception: Optional[Exception] = None
         used_provider: Optional[ProviderName] = None
 
@@ -160,7 +171,9 @@ class ProviderRouter:
                 continue
 
             try:
-                result = await breaker.call_async(self._clients[provider], prompt)
+                result = await breaker.call_async(
+                    self._clients[provider], prompt, system_prompt=system_prompt
+                )
                 provider_calls.labels(provider=provider, result="success").inc()
 
                 if used_provider is not None:
@@ -192,7 +205,7 @@ class ProviderRouter:
         self, from_provider: ProviderName, to_provider: ProviderName,
         action_id: str, stamp_id: str
     ) -> None:
-        from app.api.pillar_4_fourth_estate.streams import publish_violation
+        from app.api.judiciary.streams import publish_violation
 
         await publish_violation({
             "violation_type": "PROVIDER_FALLBACK",

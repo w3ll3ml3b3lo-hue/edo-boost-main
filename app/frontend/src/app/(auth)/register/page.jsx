@@ -8,6 +8,7 @@ import { AuthService } from "../../../lib/api/services";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,9 +20,15 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const res = await AuthService.registerGuardian({ email, password });
+      const res = await AuthService.registerGuardian({
+        email,
+        password,
+        full_name: fullName,
+      });
       localStorage.setItem("guardian_token", res.access_token);
-      router.push("/dashboard"); // Redirect to parent dashboard
+      const payload = JSON.parse(atob(res.access_token.split(".")[1]));
+      localStorage.setItem("guardian_id", payload.sub);
+      router.push("/parent-dashboard");
     } catch (err) {
       setError(err.message || "Registration failed");
     } finally {
@@ -39,6 +46,17 @@ export default function RegisterPage() {
       {error && <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4 text-sm">{error}</div>}
 
       <form onSubmit={handleRegister} className="space-y-4">
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Full name</label>
+          <input
+            type="text"
+            required
+            minLength={2}
+            className="w-full border-2 border-gray-200 rounded-lg p-3 outline-none focus:border-[var(--gold)]"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </div>
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Email</label>
           <input

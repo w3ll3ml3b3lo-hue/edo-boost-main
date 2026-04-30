@@ -224,6 +224,7 @@ class DiagnosticSession(Base):
     theta_estimate = Column(Float)
     standard_error = Column(Float)
     items_administered = Column(Integer, default=0)
+    items_correct = Column(Integer, default=0)
     items_total = Column(Integer, default=20)
     final_mastery_score = Column(Float)
     knowledge_gaps = Column(JSON, default=[])
@@ -489,6 +490,7 @@ class ParentAccount(Base):
     email_encrypted = Column(Text, nullable=False)  # AES-256 encrypted
     password_hash = Column(String(200))
     full_name_encrypted = Column(Text)
+    verification_token = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_verified = Column(Boolean, default=False)
     last_login_at = Column(DateTime(timezone=True), nullable=True)

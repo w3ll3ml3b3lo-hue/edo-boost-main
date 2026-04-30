@@ -26,7 +26,7 @@ export const LearnerService = {
   getGamificationProfile: (learnerId) =>
     fetchApi(`/gamification/profile/${learnerId}`),
 
-  getStudyPlan: (learnerId) => fetchApi(`/study-plans/${learnerId}`),
+  getStudyPlan: (learnerId) => fetchApi(`/study-plans/${learnerId}/current`),
   
   getMastery: (learnerId) => fetchApi(`/learners/${learnerId}/mastery`),
 
@@ -52,7 +52,11 @@ export const ParentService = {
       body: JSON.stringify({ learner_id: learnerId, relationship }),
     }),
     
-  getReport: (learnerId) => fetchApi(`/parent/learner/${learnerId}/report`),
+  getReport: (learnerId, guardianId) =>
+    fetchApi("/parent/report/generate", {
+      method: "POST",
+      body: JSON.stringify({ learner_id: learnerId, guardian_id: guardianId }),
+    }),
 };
 
 export const DiagnosticService = {

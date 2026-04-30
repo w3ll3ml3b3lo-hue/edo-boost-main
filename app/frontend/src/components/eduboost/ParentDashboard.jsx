@@ -50,14 +50,35 @@ export function ParentDashboard({ onBack }) {
   const handleGenerateReport = async (learnerId) => {
     setLoading(true);
     try {
-      const report = await ParentService.getReport(learnerId);
-      setActiveReport(report);
+      const guardianId = localStorage.getItem("guardian_id");
+      const response = await ParentService.getReport(learnerId, guardianId);
+      setActiveReport(normalizeReport(response.report || response));
       setShowReportModal(true);
     } catch (err) {
       alert("Failed to generate report: " + err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const normalizeReport = (report) => {
+    const content = report?.report_content || report?.content || report;
+    if (typeof content === "string") {
+      return {
+        report_date: new Date().toISOString(),
+        summary: content,
+        sections: [{ title: "Progress", content }],
+        mastery_snapshot: [],
+        recommendations: [],
+      };
+    }
+    return {
+      report_date: content?.report_date || new Date().toISOString(),
+      summary: content?.summary || content?.body || "Report generated successfully.",
+      sections: content?.sections || [],
+      mastery_snapshot: content?.mastery_snapshot || [],
+      recommendations: content?.recommendations || [],
+    };
   };
 
   return (

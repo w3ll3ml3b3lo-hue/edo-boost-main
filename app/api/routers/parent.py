@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.api.core.database import AsyncSessionFactory
 from app.api.routers.auth import get_current_user
@@ -17,6 +17,7 @@ from app.api.models.api_models import (
     ParentPortalReportRequest,
     ParentReportResponse,
 )
+from app.api.models.db_models import ParentLearnerLink
 from app.api.services.parent_portal_service import ParentPortalService
 from app.api.services.popia_deletion_service import PopiaDeletionService
 
@@ -40,19 +41,42 @@ class ConsentRequest(BaseModel):
 
 class DeletionRequest(BaseModel):
     learner_id: UUID
-    guardian_id: UUID
     reason: Optional[str] = None
+
+
+def _guardian_id(user: dict) -> UUID:
+    try:
+        return UUID(str(user["sub"]))
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid guardian token") from exc
+
+
+async def _assert_guardian_link(session, learner_id: UUID, guardian_id: UUID) -> None:
+    result = await session.execute(
+        select(ParentLearnerLink).where(
+            ParentLearnerLink.learner_id == learner_id,
+            ParentLearnerLink.parent_id == guardian_id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Guardian is not linked to this learner",
+        )
 
 
 @router.get(
     "/{learner_id}/progress/{guardian_id}", response_model=LearnerProgressResponse
 )
 async def get_learner_progress(
-    learner_id: UUID, guardian_id: UUID, _user: dict = Depends(require_guardian)
+    learner_id: UUID, guardian_id: UUID, user: dict = Depends(require_guardian)
 ):
     """Get learner progress summary for parent portal."""
     async with AsyncSessionFactory() as session:
         try:
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
             service = ParentPortalService(session)
             progress = await service.get_learner_progress_summary(
                 learner_id, guardian_id
@@ -73,15 +97,25 @@ async def get_learner_progress(
     "/{guardian_id}/progress/{learner_id}", response_model=LearnerProgressResponse
 )
 async def get_learner_progress_guardian_first(
-    guardian_id: UUID, learner_id: UUID, _user: dict = Depends(require_guardian)
+    guardian_id: UUID, learner_id: UUID, user: dict = Depends(require_guardian)
 ):
-    return await get_learner_progress(learner_id=learner_id, guardian_id=guardian_id)
+    return await get_learner_progress(
+        learner_id=learner_id, guardian_id=guardian_id, user=user
+    )
 
 
 @router.get("/{learner_id}/diagnostics/{guardian_id}")
-async def get_diagnostic_trends(learner_id: UUID, guardian_id: UUID, days: int = 30):
+async def get_diagnostic_trends(
+    learner_id: UUID,
+    guardian_id: UUID,
+    days: int = 30,
+    user: dict = Depends(require_guardian),
+):
     async with AsyncSessionFactory() as session:
         try:
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
             service = ParentPortalService(session)
             trends = await service.get_diagnostic_trends(learner_id, guardian_id, days)
             return {"success": True, "trends": trends}
@@ -96,9 +130,14 @@ async def get_diagnostic_trends(learner_id: UUID, guardian_id: UUID, days: int =
 
 
 @router.get("/{learner_id}/study-plan/{guardian_id}")
-async def get_study_plan_adherence(learner_id: UUID, guardian_id: UUID):
+async def get_study_plan_adherence(
+    learner_id: UUID, guardian_id: UUID, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
             service = ParentPortalService(session)
             adherence = await service.get_study_plan_adherence(learner_id, guardian_id)
             return {"success": True, "adherence": adherence}
@@ -117,9 +156,14 @@ async def get_study_plan_adherence(learner_id: UUID, guardian_id: UUID):
     status_code=status.HTTP_200_OK,
     response_model=ParentReportResponse,
 )
-async def generate_parent_report(request: ParentPortalReportRequest):
+async def generate_parent_report(
+    request: ParentPortalReportRequest, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != request.guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
             service = ParentPortalService(session)
             report = await service.generate_parent_report(
                 learner_id=request.learner_id,
@@ -142,10 +186,14 @@ async def generate_parent_report(request: ParentPortalReportRequest):
     response_model=ConsentResponse,
     responses={500: {"model": ErrorResponse}},
 )
-async def record_consent(request: ConsentRequest):
+async def record_consent(
+    request: ConsentRequest, user: dict = Depends(require_guardian)
+):
     event_type = "consent_granted" if request.consented else "consent_revoked"
     async with AsyncSessionFactory() as session:
         try:
+            guardian_id = _guardian_id(user)
+            await _assert_guardian_link(session, request.learner_id, guardian_id)
             email_hash = (
                 __import__("hashlib")
                 .sha256(request.guardian_email.lower().strip().encode())
@@ -174,12 +222,14 @@ async def record_consent(request: ConsentRequest):
 
 
 @router.post("/deletion/request", status_code=status.HTTP_202_ACCEPTED)
-async def request_deletion(request: DeletionRequest):
+async def request_deletion(
+    request: DeletionRequest, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
             service = PopiaDeletionService(session)
             return await service.request_deletion(
-                request.learner_id, request.guardian_id, request.reason
+                request.learner_id, _guardian_id(user), request.reason
             )
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
@@ -192,12 +242,14 @@ async def request_deletion(request: DeletionRequest):
 
 
 @router.post("/deletion/execute", status_code=status.HTTP_200_OK)
-async def execute_deletion(request: DeletionRequest):
+async def execute_deletion(
+    request: DeletionRequest, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
             service = PopiaDeletionService(session)
             return await service.execute_deletion(
-                request.learner_id, request.guardian_id
+                request.learner_id, _guardian_id(user)
             )
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
@@ -210,11 +262,16 @@ async def execute_deletion(request: DeletionRequest):
 
 
 @router.get("/deletion/status/{learner_id}/{guardian_id}")
-async def get_deletion_status(learner_id: UUID, guardian_id: UUID):
+async def get_deletion_status(
+    learner_id: UUID, guardian_id: UUID, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
             service = PopiaDeletionService(session)
-            return await service.get_deletion_status(learner_id, guardian_id)
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
+            return await service.get_deletion_status(learner_id, token_guardian_id)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except HTTPException:
@@ -226,11 +283,16 @@ async def get_deletion_status(learner_id: UUID, guardian_id: UUID):
 
 
 @router.get("/export/{learner_id}/{guardian_id}")
-async def export_learner_data(learner_id: UUID, guardian_id: UUID):
+async def export_learner_data(
+    learner_id: UUID, guardian_id: UUID, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
             service = PopiaDeletionService(session)
-            return await service.export_data(learner_id, guardian_id)
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
+            return await service.export_data(learner_id, token_guardian_id)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except HTTPException:
@@ -240,11 +302,16 @@ async def export_learner_data(learner_id: UUID, guardian_id: UUID):
 
 
 @router.get("/right-to-access/{learner_id}/{guardian_id}")
-async def right_to_access(learner_id: UUID, guardian_id: UUID):
+async def right_to_access(
+    learner_id: UUID, guardian_id: UUID, user: dict = Depends(require_guardian)
+):
     async with AsyncSessionFactory() as session:
         try:
             service = ParentPortalService(session)
-            data = await service.export_data(learner_id, guardian_id)
+            token_guardian_id = _guardian_id(user)
+            if token_guardian_id != guardian_id:
+                raise HTTPException(status_code=403, detail="Guardian mismatch")
+            data = await service.export_data(learner_id, token_guardian_id)
             return {
                 "success": True,
                 "data": data,

@@ -166,13 +166,20 @@ class PopiaDeletionService:
             delete(ParentLearnerLink).where(ParentLearnerLink.learner_id == learner_id)
         )
 
-        # Invalidate Redis lesson cache for this learner
+        # Invalidate Redis caches that may contain learner-scoped personal data.
         try:
             import redis.asyncio as aioredis
             from app.api.core.config import settings as cfg
 
             r = aioredis.from_url(cfg.REDIS_URL)
-            keys = await r.keys(f"lesson:*:{learner_id}:*")
+            patterns = [
+                f"lesson:{learner_id}:*",
+                f"study-plan:{learner_id}:*",
+                f"diagnostic:{learner_id}:*",
+            ]
+            keys = []
+            for pattern in patterns:
+                keys.extend(await r.keys(pattern))
             if keys:
                 await r.delete(*keys)
             await r.close()
@@ -390,6 +397,15 @@ class PopiaDeletionService:
     async def _verify_guardian_consent(
         self, learner_id: UUID, guardian_id: UUID
     ) -> None:
+        result = await self.session.execute(
+            select(ParentLearnerLink).where(
+                ParentLearnerLink.learner_id == learner_id,
+                ParentLearnerLink.parent_id == guardian_id,
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            raise ValueError("Guardian is not linked to this learner")
+
         result = await self.session.execute(
             select(ConsentAudit)
             .where(

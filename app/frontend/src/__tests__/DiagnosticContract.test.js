@@ -20,7 +20,7 @@ describe('Diagnostic API Contract', () => {
       expect(res.first_item).toHaveProperty('question_text');
       expect(Array.isArray(res.first_item.options)).toBe(true);
     } catch (err) {
-      console.warn('Backend not reachable, skipping live contract check');
+      throw new Error(`Diagnostic start contract failed: ${err.message}`);
     }
   });
 
@@ -41,7 +41,7 @@ describe('Diagnostic API Contract', () => {
         expect(res).toHaveProperty('session_state');
       }
     } catch (err) {
-      // Expected if session doesn't exist
+      expect(err.message).toMatch(/not found|invalid|404|400/i);
     }
   });
 });

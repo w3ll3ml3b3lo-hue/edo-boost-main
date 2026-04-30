@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.judiciary.base import ExecutiveAction, JudiciaryStampRef, WorkerAgent
-from app.api.infrastructure.provider_router import ProviderRouter
+from app.api.judiciary.provider_router import ProviderRouter
 from app.api.judiciary.profiler import EtherPromptModifier
 from app.api.services.prompt_manager import PromptManager
 from app.api.core.config import settings
@@ -32,10 +32,12 @@ class LessonCache:
         self._redis = redis_async.from_url(redis_url, decode_responses=True)
         self._ttl = ttl_seconds
 
-    def _generate_key(self, subject: str, grade: int, topic: str) -> str:
-        key_str = f"{subject}:{grade}:{topic}"
+    def _generate_key(
+        self, subject: str, grade: int, topic: str, learner_id: str | None = None
+    ) -> str:
+        key_str = f"{learner_id or 'shared'}:{subject}:{grade}:{topic}"
         key_hash = hashlib.sha256(key_str.encode()).hexdigest()[:32]
-        return f"lesson:{key_hash}"
+        return f"lesson:{learner_id or 'shared'}:{key_hash}"
 
     async def get(self, subject: str, grade: int, topic: str) -> Optional[Dict[str, Any]]:
         key = self._generate_key(subject, grade, topic)
@@ -172,6 +174,7 @@ class LessonService(WorkerAgent):
             "topic": topic,
             "content": raw_content,
         }
+        self._validate_lesson_output(lesson_result)
 
         # Persist to DB
         await self._persist_lesson(lesson_result)
@@ -217,6 +220,19 @@ class LessonService(WorkerAgent):
             result,
         )
         await self._session.commit()
+
+    def _validate_lesson_output(self, lesson: Dict[str, Any]) -> None:
+        missing = [
+            key
+            for key in ("subject", "grade", "topic", "content")
+            if lesson.get(key) in (None, "")
+        ]
+        if missing:
+            raise LLMOutputValidationError(
+                "Generated lesson is missing required fields",
+                errors=missing,
+                raw=str(lesson),
+            )
 
 # Backward compatibility procedural wrapper
 async def generate_lesson(

@@ -43,6 +43,7 @@ export default function StudyPlanPage() {
   }
 
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const schedule = plan?.days || plan?.schedule || {};
   const currentDay = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(new Date());
 
   return (
@@ -75,7 +76,7 @@ export default function StudyPlanPage() {
 
       <div className="space-y-6">
         {days.map((day) => {
-          const items = plan?.days?.[day] || [];
+          const items = schedule?.[day] || [];
           const isToday = day === currentDay;
 
           return (

@@ -25,6 +25,8 @@ export default function LoginPage() {
       if (isParent) {
         const res = await AuthService.loginGuardian({ email, password });
         localStorage.setItem("guardian_token", res.access_token);
+        const payload = JSON.parse(atob(res.access_token.split(".")[1]));
+        localStorage.setItem("guardian_id", payload.sub);
         router.push("/parent-dashboard"); // Parent dashboard
       }
     } catch (err) {

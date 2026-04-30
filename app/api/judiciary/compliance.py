@@ -84,16 +84,16 @@ class ConsentGate:
             await self._session.execute(
                 text(
                     """
-                    SELECT consent_status FROM consent_log
-                    WHERE learner_pseudonym = :p AND revoked_at IS NULL
-                    ORDER BY granted_at DESC LIMIT 1
+                    SELECT event_type FROM consent_audit
+                    WHERE pseudonym_id = :p
+                    ORDER BY occurred_at DESC LIMIT 1
                     """
                 ),
                 {"p": learner_pseudonym},
             )
         ).first()
 
-        if row is None or row[0] != "ACTIVE":
+        if row is None or row[0] != "consent_granted":
             raise PermissionError(
                 f"Learner {learner_pseudonym} does not have ACTIVE parental consent. "
                 "Processing blocked under POPIA Section 35."
@@ -107,10 +107,9 @@ class ConsentGate:
         await self._session.execute(
             text(
                 """
-                INSERT INTO consent_log
-                    (consent_id, learner_pseudonym, consent_status, granted_by,
-                     guardian_contact, granted_at)
-                VALUES (:cid, :p, 'ACTIVE', :gb, :gc, now())
+                INSERT INTO consent_audit
+                    (audit_id, pseudonym_id, event_type, consent_version, guardian_email_hash, occurred_at)
+                VALUES (:cid, :p, 'consent_granted', 1, :gc, now())
                 """
             ),
             {
@@ -130,12 +129,12 @@ class ConsentGate:
         await self._session.execute(
             text(
                 """
-                UPDATE consent_log
-                SET consent_status = 'REVOKED', revoked_at = now(), revoked_by = :rb
-                WHERE learner_pseudonym = :p AND revoked_at IS NULL
+                INSERT INTO consent_audit
+                    (audit_id, pseudonym_id, event_type, consent_version, guardian_email_hash, occurred_at)
+                VALUES (:cid, :p, 'consent_revoked', 1, :rb, now())
                 """
             ),
-            {"rb": revoked_by, "p": learner_pseudonym},
+            {"cid": str(uuid.uuid4()), "rb": revoked_by, "p": learner_pseudonym},
         )
         await self._session.commit()
         await self._emit_consent_event(learner_pseudonym, "REVOKED", None, revoked_by)
@@ -143,7 +142,7 @@ class ConsentGate:
     async def _emit_consent_event(
         self, pseudonym: str, action: str, consent_id: Optional[str], actor: str
     ) -> None:
-        from app.api.pillar_4_fourth_estate.streams import publish_consent_event
+        from app.api.judiciary.streams import publish_consent_event
 
         await publish_consent_event({
             "learner_pseudonym": pseudonym,
@@ -171,7 +170,6 @@ class ErasureService:
         "lesson_results",
         "ether_profiles",
         "session_states",
-        "consent_log",
     ]
 
     def __init__(self, session: AsyncSession):
@@ -244,7 +242,7 @@ class ErasureService:
             return 0
 
     async def _emit_deletion_event(self, pseudonym: str, summary: Dict[str, Any]) -> None:
-        from app.api.pillar_4_fourth_estate.streams import publish_action
+        from app.api.judiciary.streams import publish_action
 
         await publish_action({
             "event_type": "popia_erasure",

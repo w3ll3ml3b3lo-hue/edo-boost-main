@@ -128,7 +128,7 @@ class AuditAgent:
 
             # Special handling per stream
             if stream == STREAM_CONSENT:
-                await self._write_consent_log(fields)
+                await self._write_consent_audit(fields)
 
             # ACK only after successful DB write
             await ack_message(stream, entry_id)
@@ -172,22 +172,22 @@ class AuditAgent:
         await self._session.commit()
 
     # ------------------------------------------------------------------
-    # Consent log persistence
+    # Consent audit persistence
     # ------------------------------------------------------------------
-    async def _write_consent_log(self, fields: Dict[str, str]) -> None:
+    async def _write_consent_audit(self, fields: Dict[str, str]) -> None:
         await self._session.execute(
             text(
                 """
-                INSERT INTO consent_log
-                    (consent_id, learner_pseudonym, consent_status, granted_by, granted_at)
-                VALUES (:cid, :pseudonym, :status, :granted_by, now())
+                INSERT INTO consent_audit
+                    (audit_id, pseudonym_id, event_type, consent_version, guardian_email_hash, occurred_at)
+                VALUES (:cid, :pseudonym, :status, 1, :granted_by, now())
                 ON CONFLICT DO NOTHING
                 """
             ),
             {
                 "cid": str(uuid.uuid4()),
                 "pseudonym": fields.get("learner_pseudonym"),
-                "status": fields.get("consent_status", "ACTIVE"),
+                "status": fields.get("event_type", "consent_granted"),
                 "granted_by": fields.get("granted_by"),
             },
         )

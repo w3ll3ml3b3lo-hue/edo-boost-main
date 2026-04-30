@@ -1,4 +1,5 @@
 import { LearnerProvider } from "../context/LearnerContext";
+import { ServiceWorkerRegistration } from "../components/ServiceWorkerRegistration";
 import "./globals.css";
 
 export const metadata = {
@@ -10,7 +11,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <LearnerProvider>{children}</LearnerProvider>
+        <LearnerProvider>
+          <ServiceWorkerRegistration />
+          {children}
+        </LearnerProvider>
       </body>
     </html>
   );

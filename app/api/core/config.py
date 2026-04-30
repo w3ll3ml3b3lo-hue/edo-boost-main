@@ -85,7 +85,10 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 3600
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "https://eduboost.co.za"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3050",
+        "https://eduboost.co.za",
+    ]
 
     # Monitoring
     SENTRY_DSN: str = ""
@@ -128,8 +131,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
-        if self.APP_ENV != "production":
+        if self.APP_ENV == "test":
             return self
+
+        if not self.JWT_SECRET.strip():
+            raise ValueError("JWT_SECRET must be set outside test environments")
 
         required_non_empty = {
             "SECRET_KEY": self.SECRET_KEY,
@@ -138,6 +144,9 @@ class Settings(BaseSettings):
             "ENCRYPTION_SALT": self.ENCRYPTION_SALT,
             "DATABASE_URL": self.DATABASE_URL,
         }
+
+        if self.APP_ENV != "production":
+            return self
 
         missing = [
             key

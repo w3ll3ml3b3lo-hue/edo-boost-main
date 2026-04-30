@@ -1,7 +1,7 @@
 """EduBoost SA — Auth Router"""
 
 from datetime import datetime, timedelta
-from app.api.util.encryption import encrypt_email, decrypt_email
+from app.api.util.encryption import decrypt_email, encrypt_email, encrypt_text
 import uuid
 
 import jwt
@@ -39,6 +39,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def _create_token(data: dict) -> str:
     payload = {
         **data,
+        "jti": str(uuid.uuid4()),
         "exp": datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRY_HOURS),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
@@ -62,7 +63,22 @@ async def get_current_user(
     """FastAPI dependency: extract and validate the current user from Bearer token."""
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return _decode_token(credentials.credentials)
+    payload = _decode_token(credentials.credentials)
+    jti = payload.get("jti")
+    if jti:
+        try:
+            import redis.asyncio as redis_lib
+
+            r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
+            revoked = await r.get(f"token_blacklist:{jti}")
+            await r.aclose()
+            if revoked:
+                raise HTTPException(status_code=401, detail="Token revoked")
+        except HTTPException:
+            raise
+        except Exception:
+            log.warning("auth.blacklist_check_failed")
+    return payload
 
 
 async def require_role(role: str):
@@ -87,10 +103,7 @@ async def _verify_guardian(email: str, learner_pseudonym_id: str) -> bool:
     try:
         async with AsyncSessionFactory() as session:
             # 1. Find parent account by email hash
-            result = await session.execute(
-                select(ParentAccount).where(ParentAccount.email_encrypted == email_encrypted)
-            )
-            parent = result.scalar_one_or_none()
+            parent = await _find_parent_by_email(session, email.lower().strip())
             if not parent:
                 log.warning("auth.guardian.account_not_found", email_encrypted=email_encrypted)
                 return False
@@ -114,6 +127,17 @@ async def _verify_guardian(email: str, learner_pseudonym_id: str) -> bool:
     except Exception as e:
         log.error("auth.guardian.db_error", error=str(e))
         return False
+
+
+async def _find_parent_by_email(session, email_lower: str) -> ParentAccount | None:
+    result = await session.execute(select(ParentAccount))
+    for parent in result.scalars().all():
+        try:
+            if decrypt_email(parent.email_encrypted) == email_lower:
+                return parent
+        except Exception:
+            continue
+    return None
 
 
 # ── Request Models ─────────────────────────────────────────────────────────────
@@ -149,12 +173,8 @@ async def register_guardian(request: Request, body: GuardianRegisterRequest):
 
     async with AsyncSessionFactory() as session:
         # Check for duplicate
-        existing = await session.execute(
-            select(ParentAccount).where(
-                ParentAccount.email_encrypted == email_encrypted
-            )
-        )
-        if existing.scalar_one_or_none():
+        existing = await _find_parent_by_email(session, email_lower)
+        if existing:
             raise HTTPException(
                 status_code=409,
                 detail=ErrorResponse(
@@ -167,7 +187,7 @@ async def register_guardian(request: Request, body: GuardianRegisterRequest):
             parent_id=uuid.uuid4(),
             email_encrypted=email_encrypted,
             password_hash=bcrypt.hash(body.password),
-            full_name_encrypted=body.full_name,  # Placeholder for real encryption
+            full_name_encrypted=encrypt_text(body.full_name),
             is_verified=False,
         )
         session.add(parent)
@@ -198,12 +218,7 @@ async def guardian_login(request: Request, request_body: GuardianLoginRequest):
     email_encrypted = encrypt_email(email_lower)
 
     async with AsyncSessionFactory() as session:
-        result = await session.execute(
-            select(ParentAccount).where(
-                ParentAccount.email_encrypted == email_encrypted
-            )
-        )
-        parent = result.scalar_one_or_none()
+        parent = await _find_parent_by_email(session, email_lower)
 
     if parent and hasattr(request_body, "password") and request_body.password:
         # Full password-based login
@@ -221,7 +236,7 @@ async def guardian_login(request: Request, request_body: GuardianLoginRequest):
         )
 
     # Fallback: legacy pseudonym-based verification
-    if not await _verify_guardian(
+    if not request_body.learner_pseudonym_id or not await _verify_guardian(
         request_body.email, request_body.learner_pseudonym_id
     ):
         raise HTTPException(
@@ -352,7 +367,7 @@ async def guardian_logout(user: dict = Depends(get_current_user)):
             ttl = max(1, int(token_exp - now))
 
             # Blacklist the token (store token sub + role as value)
-            token_key = f"token_blacklist:{user.get('sub')}"
+            token_key = f"token_blacklist:{user.get('jti')}"
             await r.setex(
                 token_key, ttl, f"{user.get('role')}:{datetime.utcnow().isoformat()}"
             )
@@ -399,7 +414,7 @@ async def learner_logout(user: dict = Depends(get_current_user)):
             now = datetime.utcnow().timestamp()
             ttl = max(1, int(token_exp - now))
 
-            token_key = f"token_blacklist:{user.get('sub')}"
+            token_key = f"token_blacklist:{user.get('jti')}"
             await r.setex(token_key, ttl, f"learner:{datetime.utcnow().isoformat()}")
 
         await r.aclose()

@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.judiciary.base import ExecutiveAction, JudiciaryStampRef, WorkerAgent
-from app.api.infrastructure.provider_router import ProviderRouter
+from app.api.judiciary.provider_router import ProviderRouter
+from app.api.models.db_models import Learner, StudyPlan, SubjectMastery
 from app.api.services.prompt_manager import PromptManager
 
 logger = logging.getLogger(__name__)
@@ -78,15 +80,20 @@ class StudyPlanService(WorkerAgent):
             action_id=action.action_id,
             stamp_id=stamp.stamp_id,
         )
+        schedule = self._normalize_schedule(raw_content)
 
         plan_id = str(uuid.uuid4())
         plan_result = {
             "plan_id": plan_id,
             "action_id": action.action_id,
             "stamp_id": stamp.stamp_id,
-            "learner_pseudonym": action.learner_pseudonym,
+            "learner_id": action.learner_pseudonym,
             "grade": action.parameters["grade"],
-            "schedule": raw_content,
+            "schedule": schedule,
+            "days": schedule,
+            "gap_ratio": kwargs.get("gap_ratio", 0.4),
+            "week_focus": self._week_focus(action.parameters["knowledge_gaps"]),
+            "generated_by": "AI",
         }
 
         # Persist to DB
@@ -113,17 +120,117 @@ class StudyPlanService(WorkerAgent):
         return system, user_prompt
 
     async def _persist_plan(self, result: Dict[str, Any]) -> None:
-        await self._session.execute(
-            text(
-                """
-                INSERT INTO study_plans
-                    (plan_id, action_id, stamp_id, learner_id, grade, schedule, created_at)
-                VALUES (:plan_id, :action_id, :stamp_id, :learner_pseudonym, :grade, :schedule, now())
-                """
-            ),
-            result,
+        self._session.add(
+            StudyPlan(
+                plan_id=uuid.UUID(result["plan_id"]),
+                learner_id=uuid.UUID(str(result["learner_id"])),
+                week_start=datetime.now(timezone.utc),
+                schedule=result["schedule"],
+                gap_ratio=result["gap_ratio"],
+                week_focus=result["week_focus"],
+                generated_by=result["generated_by"],
+            )
         )
         await self._session.commit()
+
+    async def generate_plan(
+        self,
+        learner_id: uuid.UUID,
+        grade: int,
+        knowledge_gaps: list,
+        subjects_mastery: dict,
+        gap_ratio: float = 0.4,
+    ) -> Dict[str, Any]:
+        return await self.run(
+            learner_pseudonym=str(learner_id),
+            grade=grade,
+            knowledge_gaps=knowledge_gaps,
+            subjects_mastery=subjects_mastery,
+            gap_ratio=gap_ratio,
+        )
+
+    async def get_current_plan(self, learner_id: uuid.UUID) -> StudyPlan | None:
+        result = await self._session.execute(
+            select(StudyPlan)
+            .where(StudyPlan.learner_id == learner_id)
+            .order_by(StudyPlan.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def refresh_plan(
+        self, learner_id: uuid.UUID, gap_ratio: float = 0.4
+    ) -> Dict[str, Any]:
+        learner = await self._session.get(Learner, learner_id)
+        if learner is None:
+            raise ValueError(f"Learner {learner_id} not found")
+
+        mastery_result = await self._session.execute(
+            select(SubjectMastery).where(SubjectMastery.learner_id == learner_id)
+        )
+        mastery_rows = mastery_result.scalars().all()
+        subjects_mastery = {
+            row.subject_code: row.mastery_score for row in mastery_rows
+        }
+        knowledge_gaps = [
+            gap
+            for row in mastery_rows
+            for gap in (row.knowledge_gaps or [])
+        ]
+        return await self.generate_plan(
+            learner_id=learner_id,
+            grade=learner.grade,
+            knowledge_gaps=knowledge_gaps,
+            subjects_mastery=subjects_mastery,
+            gap_ratio=gap_ratio,
+        )
+
+    async def get_plan_with_rationale(self, learner_id: uuid.UUID) -> Dict[str, Any]:
+        plan = await self.get_current_plan(learner_id)
+        if plan is None:
+            raise ValueError("No study plan found for this learner")
+        return {
+            "plan_id": str(plan.plan_id),
+            "learner_id": str(plan.learner_id),
+            "week_start": plan.week_start.isoformat(),
+            "schedule": plan.schedule,
+            "days": plan.schedule,
+            "gap_ratio": plan.gap_ratio,
+            "week_focus": plan.week_focus,
+            "generated_by": plan.generated_by,
+            "created_at": plan.created_at.isoformat() if plan.created_at else None,
+            "rationale": "Prioritises known gaps while preserving grade-level CAPS practice.",
+        }
+
+    def _normalize_schedule(self, raw_content: Any) -> Dict[str, list]:
+        if isinstance(raw_content, dict):
+            if isinstance(raw_content.get("schedule"), dict):
+                return raw_content["schedule"]
+            if isinstance(raw_content.get("days"), dict):
+                return raw_content["days"]
+        if isinstance(raw_content, str):
+            import json
+
+            try:
+                parsed = json.loads(raw_content)
+                if isinstance(parsed, dict):
+                    return self._normalize_schedule(parsed)
+            except json.JSONDecodeError:
+                pass
+        return {
+            "Mon": [{"label": "Foundation review", "type": "gap-fill"}],
+            "Tue": [{"label": "CAPS practice", "type": "curriculum"}],
+            "Wed": [{"label": "Guided examples", "type": "curriculum"}],
+            "Thu": [{"label": "Gap consolidation", "type": "gap-fill"}],
+            "Fri": [{"label": "Weekly mastery check", "type": "assessment"}],
+            "Sat": [],
+            "Sun": [],
+        }
+
+    def _week_focus(self, gaps: list) -> str:
+        if not gaps:
+            return "Grade-level CAPS mastery"
+        return f"Close {len(gaps)} priority learning gap(s)"
 
 # Procedural wrapper
 async def generate_study_plan(
@@ -134,9 +241,9 @@ async def generate_study_plan(
     subjects_mastery: dict
 ) -> Dict[str, Any]:
     service = StudyPlanService(session)
-    return await service.run(
-        learner_pseudonym=learner_id,
+    return await service.generate_plan(
+        learner_id=uuid.UUID(str(learner_id)),
         grade=grade,
         knowledge_gaps=knowledge_gaps,
-        subjects_mastery=subjects_mastery
+        subjects_mastery=subjects_mastery,
     )

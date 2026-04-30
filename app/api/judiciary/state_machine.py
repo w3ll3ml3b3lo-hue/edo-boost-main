@@ -202,7 +202,7 @@ class SessionOrchestrator:
         metadata: dict,
     ) -> None:
         try:
-            from app.api.pillar_4_fourth_estate.streams import publish_action
+            from app.api.judiciary.streams import publish_action
 
             await publish_action({
                 "event_type": "session_transition",

@@ -121,7 +121,8 @@ class DiagnosticSubmitResponse(StrictSchema):
 
 class GuardianLoginRequest(StrictSchema):
     email: EmailStr
-    learner_pseudonym_id: str = Field(min_length=1)
+    learner_pseudonym_id: str | None = None
+    password: str | None = None
 
 
 class TokenResponse(StrictSchema):

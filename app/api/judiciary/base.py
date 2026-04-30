@@ -147,15 +147,15 @@ class WorkerAgent(ABC):
         row = (
             await session.execute(
                 text(
-                    "SELECT consent_status FROM consent_log "
-                    "WHERE learner_pseudonym = :p AND revoked_at IS NULL "
-                    "ORDER BY granted_at DESC LIMIT 1"
+                    "SELECT event_type FROM consent_audit "
+                    "WHERE pseudonym_id = :p "
+                    "ORDER BY occurred_at DESC LIMIT 1"
                 ),
                 {"p": learner_pseudonym},
             )
         ).first()
 
-        if row is None or row[0] != "ACTIVE":
+        if row is None or row[0] != "consent_granted":
             raise ConsentViolationError(
                 f"Learner {learner_pseudonym} does not have ACTIVE parental consent. "
                 "Processing is blocked until consent is granted."
