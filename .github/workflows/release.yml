@@ -1,0 +1,170 @@
+# .github/workflows/release.yml
+#
+# EduBoost SA — Release Automation
+#
+# Triggered manually via workflow_dispatch with a version bump type (patch/minor/major).
+# Workflow:
+#   1. Bumps version in app/api/version.py
+#   2. Updates CHANGELOG.md (moves Unreleased → new version section)
+#   3. Commits, tags, and pushes
+#   4. The tag push triggers the deploy-production job in ci-cd.yml
+#
+# Usage (GitHub UI → Actions → Release → Run workflow):
+#   bump: patch | minor | major
+#   prerelease: true | false
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+      prerelease:
+        description: "Mark as pre-release?"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    name: Bump version and tag release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install semver utility
+        run: pip install semver
+
+      - name: Compute new version
+        id: version
+        run: |
+          python - <<'EOF'
+          import semver, pathlib, re, os
+
+          version_file = pathlib.Path("app/api/version.py")
+          current = re.search(r'__version__\s*=\s*["\'](.+?)["\']', version_file.read_text()).group(1)
+          ver = semver.Version.parse(current.lstrip("v"))
+
+          bump = "${{ inputs.bump }}"
+          if bump == "major":
+              new = ver.bump_major()
+          elif bump == "minor":
+              new = ver.bump_minor()
+          else:
+              new = ver.bump_patch()
+
+          prerelease = "${{ inputs.prerelease }}" == "true"
+          if prerelease:
+              new = new.bump_prerelease("beta")
+
+          tag = f"v{new}"
+          print(f"Bumping {current} → {tag}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"new_version={new}\n")
+              f.write(f"tag={tag}\n")
+              f.write(f"current_version={current}\n")
+          EOF
+
+      - name: Update version.py
+        run: |
+          python - <<'EOF'
+          import pathlib, re
+
+          vf = pathlib.Path("app/api/version.py")
+          content = vf.read_text()
+          new = re.sub(
+              r'(__version__\s*=\s*["\'])(.+?)(["\'])',
+              rf'\g<1>${{ steps.version.outputs.new_version }}\g<3>',
+              content
+          )
+          vf.write_text(new)
+          print(f"Updated version.py to ${{ steps.version.outputs.new_version }}")
+          EOF
+
+      - name: Update CHANGELOG.md
+        run: |
+          python - <<'EOF'
+          import pathlib, datetime
+
+          today = datetime.date.today().isoformat()
+          tag = "${{ steps.version.outputs.tag }}"
+          ver = "${{ steps.version.outputs.new_version }}"
+          prev = "${{ steps.version.outputs.current_version }}"
+          repo = "${{ github.repository }}"
+
+          cl = pathlib.Path("CHANGELOG.md")
+          content = cl.read_text()
+
+          # Replace [Unreleased] header with versioned header
+          content = content.replace(
+              "## [Unreleased]",
+              f"## [Unreleased]\n\n---\n\n## [{ver}] — {today}",
+              1
+          )
+
+          # Update comparison links
+          content = content.replace(
+              f"[Unreleased]: https://github.com/{repo}/compare/v{prev}...HEAD",
+              f"[Unreleased]: https://github.com/{repo}/compare/{tag}...HEAD\n"
+              f"[{ver}]: https://github.com/{repo}/compare/v{prev}...{tag}"
+          )
+
+          cl.write_text(content)
+          print(f"CHANGELOG updated for {tag}")
+          EOF
+
+      - name: Commit and tag
+        run: |
+          git add app/api/version.py CHANGELOG.md
+          git commit -m "chore: release ${{ steps.version.outputs.tag }}"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin main
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          python - <<'EOF'
+          import pathlib, re
+
+          content = pathlib.Path("CHANGELOG.md").read_text()
+          # Extract the section for this version
+          ver = "${{ steps.version.outputs.new_version }}"
+          pattern = rf"## \[{re.escape(ver)}\].*?\n(.*?)(?=\n## |\Z)"
+          match = re.search(pattern, content, re.DOTALL)
+          notes = match.group(1).strip() if match else "See CHANGELOG.md for details."
+
+          import os
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              # GitHub output doesn't support multiline well; write to file instead
+              pathlib.Path("/tmp/release_notes.md").write_text(notes)
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "EduBoost SA ${{ steps.version.outputs.tag }}"
+          body_path: /tmp/release_notes.md
+          draft: false
+          prerelease: ${{ inputs.prerelease }}

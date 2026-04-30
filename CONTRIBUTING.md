@@ -1,364 +1,244 @@
-# Contributing to EduBoost SA 🦁
+# Contributing to EduBoost SA
 
-Thank you for your interest in contributing to EduBoost SA — an AI-powered adaptive learning platform for South African learners (Grade R–7). Every contribution, large or small, directly supports equal access to quality education.
+Thank you for contributing to EduBoost SA. This document covers everything you
+need to get the stack running locally, the development workflow, and the rules
+that keep the codebase safe for the children who use this platform.
 
 ---
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
-- [Project Overview for Contributors](#project-overview-for-contributors)
-- [Development Setup](#development-setup)
-- [Contribution Workflow](#contribution-workflow)
-- [Coding Standards](#coding-standards)
-- [Testing Requirements](#testing-requirements)
-- [Commit Message Convention](#commit-message-convention)
-- [Pull Request Process](#pull-request-process)
-- [Priority Areas](#priority-areas)
-- [Getting Help](#getting-help)
+1. [Prerequisites](#prerequisites)
+2. [Environment Setup](#environment-setup)
+3. [Running the Stack](#running-the-stack)
+4. [Development Workflow (TDD Loop)](#development-workflow)
+5. [Testing](#testing)
+6. [POPIA Rules — Non-Negotiable](#popia-rules)
+7. [Commit & Branch Conventions](#commit--branch-conventions)
+8. [Releasing](#releasing)
+9. [Architecture Quick Reference](#architecture-quick-reference)
 
 ---
 
-## Code of Conduct
+## Prerequisites
 
-This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold a welcoming, respectful environment for everyone. Please read it before engaging.
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Docker Desktop | 4.x+ | Local stack |
+| Docker Compose | v2.x+ | Bundled with Docker Desktop |
+| Python | 3.11+ | Backend development |
+| Node.js | 20 LTS | Frontend development |
+| Git | 2.40+ | Version control |
 
----
-
-## Project Overview for Contributors
-
-EduBoost SA is a **full-stack monorepo** with the following key layers:
-
-| Layer | Location | Technology |
-|-------|----------|------------|
-| Backend API | `app/api/` | FastAPI 0.111, Python 3.11, SQLAlchemy 2.0 |
-| Frontend | `app/frontend/` | Next.js 14 (App Router) |
-| Adaptive Engine | `app/api/ml/` | IRT via scikit-learn, numpy, scipy |
-| AI / LLM Layer | `app/api/services/` | Groq (primary), Anthropic, HuggingFace |
-| Background Tasks | `app/api/core/celery_app.py` | Celery 5.4 + Redis 7 |
-| Database | `app/api/models/` + `alembic/` | PostgreSQL 16, Alembic |
-| Governance | `app/api/judiciary.py` | Policy validation layer |
-| Audit | `app/api/fourth_estate.py` | Redis stream-backed audit trail |
-| Tests | `tests/unit/`, `tests/integration/` | pytest, pytest-asyncio |
-
-**Current hardening focus:** test coverage, E2E validation, POPIA compliance, and CI/CD.  
-Please **prioritise these areas** over adding new surface area.
+Optional but recommended:
+- `pgcli` — better PostgreSQL CLI
+- `httpx` — for running `scripts/popia_sweep.py --live-check`
 
 ---
 
-## Development Setup
-
-### Prerequisites
-
-| Tool | Minimum Version |
-|------|----------------|
-| Python | 3.11 (pinned via `.python-version`) |
-| Node.js | 18+ |
-| Docker | 24+ |
-| Docker Compose | v2 (plugin, not standalone) |
-| Git | 2.40+ |
-
-### 1. Fork and clone
+## Environment Setup
 
 ```bash
-git clone https://github.com/<your-username>/edo-boost-main.git
+# 1. Clone the repo
+git clone https://github.com/NkgoloL/edo-boost-main.git
 cd edo-boost-main
+
+# 2. Create your local environment file
+cp .env.example .env
+# Open .env and fill in required values (marked REQUIRED in the file)
+
+# 3. Install Python dev dependencies
+pip install -r requirements.txt -r requirements-dev.txt
+
+# 4. Install frontend dependencies
+cd app/frontend && npm ci && cd ../..
+
+# 5. Install Playwright browsers (for E2E tests)
+npx playwright install chromium
 ```
 
-### 2. Configure environment
-
+**Note:** If you need local ML inference (torch/transformers), install separately:
 ```bash
-cp env.example .env
-# Edit .env and populate at minimum:
-# DATABASE_URL, REDIS_URL, GROQ_API_KEY or ANTHROPIC_API_KEY, JWT_SECRET, ENCRYPTION_KEY
+pip install -r requirements-ml.txt --extra-index-url https://download.pytorch.org/whl/cpu
 ```
+This is optional — the API uses Anthropic/Groq in development by default.
 
-> **Security note:** Never commit `.env`. The `.gitignore` excludes it, but double-check before every push.
+---
 
-### 3. Start the full stack
-
-```bash
-docker compose up --build
-```
-
-Services will be available at:
-
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3002 |
-| API | http://localhost:8000 |
-| API Docs (Swagger) | http://localhost:8000/docs |
-| Grafana | http://localhost:3001 |
-| Prometheus | http://localhost:9090 |
-| Flower (Celery) | http://localhost:5555 |
-
-### 4. Run without Docker (backend only)
+## Running the Stack
 
 ```bash
-cd app/api
-python -m venv ../../.venv
-source ../../.venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r ../../requirements.txt
-alembic upgrade head                 # Apply all migrations
-uvicorn main:app --reload --port 8000
-```
+# Start all services (Postgres, Redis, API, Frontend, Celery, Prometheus, Grafana)
+docker-compose up -d
 
-### 5. Run frontend standalone
+# Watch API logs
+docker-compose logs -f api
 
-```bash
-cd app/frontend
-npm install
-npm run dev       # http://localhost:3000
-```
+# Run database migrations manually (auto-runs on startup via db-migrate service)
+alembic upgrade head
 
-### 6. Install pre-commit hooks
-
-Pre-commit hooks enforce code quality before every commit. **This is mandatory.**
-
-```bash
-pip install pre-commit
-pre-commit install
+# URLs:
+#   Frontend:   http://localhost:3000
+#   API docs:   http://localhost:8000/docs
+#   Grafana:    http://localhost:3001  (admin / value from GRAFANA_ADMIN_PASSWORD)
+#   Prometheus: http://localhost:9090
+#   Flower:     http://localhost:5555
 ```
 
 ---
 
-## Contribution Workflow
+## Development Workflow
 
-We use the **TDD loop** described in `AGENT_INSTRUCTIONS.md`:
+EduBoost SA follows a **TDD-first loop**. For every new feature or bug fix:
 
 ```
-1. Create feature branch
-2. Write failing tests first
-3. Implement the feature/fix
-4. Run the full test suite — all tests must pass
-5. Open a Pull Request
+1. Write a failing test  →  tests/unit/ or tests/integration/
+2. Run it (confirm red)  →  pytest tests/ -k "your_test_name"
+3. Implement the feature →  app/api/
+4. Run it (confirm green) → pytest tests/
+5. Run POPIA sweep       →  python scripts/popia_sweep.py
+6. Commit                →  following conventions below
 ```
 
-### Branch Naming
-
-| Type | Pattern | Example |
-|---|---|---|
-| Feature | `feat/<pillar>/<description>` | `feat/judiciary/stamp-caching` |
-| Bug fix | `fix/<pillar>/<description>` | `fix/ether/decay-scheduler` |
-| Compliance | `popia/<description>` | `popia/erasure-cascade` |
-| Docs | `docs/<description>` | `docs/ether-archetype-map` |
-| Chore | `chore/<description>` | `chore/update-requirements` |
+Agents must update `audits/roadmap.md` before starting a new session.
 
 ---
 
-## Pull Request Requirements
+## Testing
 
-All PRs must satisfy **all** of the following before merge to `main`:
+```bash
+# Full test suite (unit + integration, excluding E2E)
+pytest tests/ -v --cov=app --cov-report=term-missing -m "not e2e"
 
-### Automated gates (CI must be green)
-- [ ] `ruff check` passes
-- [ ] `mypy` type check passes
-- [ ] Unit test coverage ≥ 80% for modified modules
-- [ ] `alembic check` passes (no schema drift)
-- [ ] POPIA compliance tests pass
+# POPIA enforcement tests only (run before every PR)
+pytest tests/popia/ -v
 
-### Manual review requirements
+# E2E tests (requires running stack)
+npx playwright test
 
-| Changed path | Required reviewers |
-|---|---|
-| `app/api/judiciary/` | 2 senior engineers |
-| `app/api/constitutional_schema/` | 1 senior engineer + Information Officer |
-| `app/api/audits/` | 1 senior engineer |
-| `popia/` | Information Officer |
-| Any migration in `alembic/versions/` | 1 senior engineer |
+# POPIA static sweep (run before every PR)
+python scripts/popia_sweep.py --fail-on-issues
 
-### PR description checklist
-- [ ] Describe what changed and why
-- [ ] List the `ConstitutionalRule` rule IDs that apply to this change (if touching learner data)
-- [ ] Confirm no PII appears in any test fixture, log sample, or seed data
-- [ ] Update `CHANGELOG.md`
-- [ ] Add/update tests for new behaviour
+# Frontend lint and type checks
+cd app/frontend && npm run lint && npm run type-check
+```
+
+Coverage target: **60% minimum** (CI enforces this). New features must not
+lower coverage.
 
 ---
 
-## Coding Standards
+## POPIA Rules — Non-Negotiable
 
-### Python (Backend)
+EduBoost SA processes personal data of children aged 5–13. POPIA compliance is
+not optional and not negotiable. Every contributor must follow these rules:
 
-- **Python version:** 3.11 (enforced by `.python-version`)
-- **Type hints required** on all public functions and methods
-- **Docstrings required** on all classes and public methods (Google-style)
-- **Async-first:** use `async def` for all I/O-bound functions
-- **No direct database writes** outside of service or model layer
-- **PII handling:** any code touching learner data **must** go through the `judiciary.py` policy layer and emit an event to `fourth_estate.py`
+### 1. Consent gate is mandatory
+Every API endpoint that reads or writes learner personal data MUST call
+`ConsentService.require_active_consent()` before any database access.
 
 ```python
-# ✅ Good
-async def get_learner_profile(learner_id: str, db: AsyncSession) -> LearnerProfile:
-    """Retrieve a learner profile by pseudonymous ID.
-    
-    Args:
-        learner_id: Pseudonymous learner identifier (never a real name).
-        db: Async database session.
-        
-    Returns:
-        LearnerProfile model instance.
-        
-    Raises:
-        HTTPException: 404 if learner not found.
-    """
+# ✅ Correct
+async def get_lesson(learner_id: UUID, db: AsyncSession = Depends(get_db)):
+    await ConsentService.require_active_consent(db, learner_id)  # FIRST
+    lesson = await LessonService.get_latest(db, learner_id)
     ...
 
-# ❌ Bad — no type hints, no docstring, sync in async context
-def get_learner(id):
+# ❌ POPIA violation — never do this
+async def get_lesson(learner_id: UUID, db: AsyncSession = Depends(get_db)):
+    lesson = await LessonService.get_latest(db, learner_id)  # No consent check!
     ...
 ```
 
-### JavaScript / TypeScript (Frontend)
+### 2. Never send real identifiers to LLM providers
+Only `pseudonym_id` (not `learner_id`, not names, not emails) may appear in
+prompts sent to Anthropic, Groq, or HuggingFace.
 
-- **TypeScript strict mode** is enabled; no `any` types without explicit justification
-- **Component naming:** PascalCase for components, camelCase for hooks and utilities
-- **API calls** must go through `src/lib/api/` — no direct `fetch()` in page components
-- **No secrets** in frontend code; use `NEXT_PUBLIC_` env vars for client-side config only
+```python
+# ✅ Correct
+prompt = f"Generate a Grade 4 maths lesson for learner {learner.pseudonym_id}"
 
-### SQL / Migrations
+# ❌ POPIA violation
+prompt = f"Generate a lesson for {learner.display_name} ({learner.id})"
+```
 
-- **All schema changes through Alembic** — runtime `create_all()` is disabled
-- **Name migrations descriptively:** `alembic revision --autogenerate -m "add_consent_timestamp_to_learners"`
-- **Down migrations required** for all `upgrade()` functions
-- **Indexes:** add an index for any foreign key or frequently-queried column
+### 3. Audit log every consent change
+Calls to `grant()`, `revoke()`, and `execute_erasure()` must be followed by an
+audit log entry. The `fourth_estate.py` component provides this — use it.
 
----
-
-## Testing Requirements
-
-> All PRs must maintain or improve test coverage. PRs that reduce coverage will be blocked.
-
-### Running tests
-
+### 4. Run the POPIA sweep before every PR
 ```bash
-# Full suite
-pytest
+python scripts/popia_sweep.py --fail-on-issues
+```
+If the sweep reports any critical or high issues, fix them before opening the PR.
+PRs with unresolved POPIA issues will not be merged.
 
-# Unit tests only
-pytest tests/unit/ -v
+---
 
-# Integration tests only
-pytest tests/integration/ -v
+## Commit & Branch Conventions
 
-# With coverage report (HTML)
-pytest --cov=app --cov-report=html
-
-# Fast mode (skip slow integration tests)
-pytest -m "not slow" -v
+Branch naming:
+```
+feature/short-description
+fix/short-description
+chore/short-description
+docs/short-description
 ```
 
-### What to test
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+```
+feat: add consent renewal reminder email
+fix: correct expires_at calculation in mark_granted
+chore: move torch to requirements-ml.txt
+docs: update CONTRIBUTING.md with POPIA rules
+test: add E2E lesson delivery test
+```
 
-| Change type | Required tests |
-|-------------|----------------|
-| New API endpoint | Integration test for happy path + validation errors + auth |
-| New service method | Unit test with mocked dependencies |
-| New ML model change | Unit test with fixed input → expected output |
-| Database model change | Test migration up and down |
-| LLM prompt change | Unit test with mocked LLM response |
-| Frontend component | Component render test (if applicable) |
+**Do not** commit directly to `main`. Open a PR and get at least one review.
 
-### Test file conventions
+---
+
+## Releasing
+
+Releases are managed via GitHub Actions. To cut a release:
+
+1. Ensure `main` is green (all CI checks pass).
+2. Go to **Actions → Release → Run workflow**.
+3. Select bump type: `patch` | `minor` | `major`.
+4. The workflow will bump `app/api/version.py`, update `CHANGELOG.md`, tag,
+   and trigger production deployment automatically.
+
+**Never** manually edit `app/api/version.py` or create git tags by hand.
+
+---
+
+## Architecture Quick Reference
 
 ```
+app/
+  api/
+    routers/        HTTP layer — thin, validates input, calls services
+    services/       Business logic — consent_service, lesson_service, etc.
+    models/         SQLAlchemy 2.0 ORM models
+    core/           DB session, Celery config, security utils
+    orchestrator.py Workflow orchestration (multi-step LLM flows)
+    judiciary.py    Policy enforcement (content safety, rate limits)
+    fourth_estate.py Audit logging component
+  frontend/         Next.js 14 App Router
+    src/app/        Page routes (dashboard, lesson, diagnostic, parent)
+    src/components/ UI component library
+    src/lib/api/    API service layer (typed fetch wrappers)
+
 tests/
-  unit/
-    test_<module_name>.py         # mirrors app/api/<module_name>.py
-  integration/
-    test_<feature>_flow.py        # end-to-end feature flows
+  unit/             Fast, no DB — mock everything external
+  integration/      Real DB (test schema), no external APIs
+  popia/            POPIA consent enforcement tests (must always pass)
+  e2e/              Playwright — full stack, real browser
+
+scripts/
+  popia_sweep.py    POPIA static + dynamic audit
+  db_seed.sql       Reference data (run once via SEED_ON_BOOT=true)
+
+alembic/
+  versions/         DB migrations — Alembic is the ONLY schema authority
 ```
-
-Use `factory-boy` factories (in `tests/factories/`) for test data. Never hardcode PII in tests.
-
----
-
-## Commit Message Convention
-
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <short summary>
-
-[optional body]
-
-[optional footer: refs #issue]
-```
-
-**Types:** `feat`, `fix`, `test`, `docs`, `refactor`, `chore`, `perf`, `ci`
-
-**Scopes** (match directory names): `api`, `frontend`, `ml`, `celery`, `db`, `auth`, `popia`, `monitoring`
-
-**Examples:**
-
-```
-feat(ml): add 3PL IRT model for Grade 4-7 diagnostics
-
-Extends the adaptive engine beyond 2PL to capture guessing
-behaviour in older learners. Improves diagnostic precision
-by 12% on validation set.
-
-refs #48
-
----
-
-fix(api): return 404 not 500 when learner not found
-
-Judiciary layer was raising an unhandled AttributeError.
-Added explicit check before policy validation.
-
-refs #61
-```
-
----
-
-## Pull Request Process
-
-1. **Branch from `main`** — keep your branch short-lived (< 2 weeks)
-2. **Fill in the PR template completely** — incomplete PRs will not be reviewed
-3. **Link the issue** your PR addresses (e.g., `Closes #42`)
-4. **All CI checks must pass** — tests, lint, type-check
-5. **At least one review approval** required before merge
-6. **Squash-merge preferred** to keep the `main` history clean
-7. **Update docs** if you change any public interface, environment variable, or infrastructure component
-8. **Update `CHANGELOG.md`** under `## Unreleased`
-
-### PR checklist (from template)
-
-- [ ] Tests written and passing
-- [ ] Coverage maintained or improved
-- [ ] Pre-commit hooks pass
-- [ ] Docs updated (if needed)
-- [ ] CHANGELOG.md updated
-- [ ] No secrets or PII in code or tests
-- [ ] POPIA implications considered (does this change touch learner data?)
-
----
-
-## Priority Areas
-
-The following areas are actively blocked on contributions. They have the most impact and will receive the fastest review:
-
-1. **Test coverage** — pick any file under `app/api/` with missing tests and add them
-2. **POPIA E2E validation** — right-to-erasure, consent flows, audit trail completeness
-3. **CI/CD pipeline** — GitHub Actions workflow for test, lint, build, and deploy
-4. **Frontend E2E tests** — Playwright or Cypress tests for critical user journeys
-5. **Accessibility** — WCAG 2.1 AA audit and remediation on all frontend pages
-6. **Documentation** — keep docs in sync with code reality
-
-Low-priority right now (defer unless assigned):
-- New AI features
-- New gamification mechanics
-- UI redesign
-
----
-
-## Getting Help
-
-- **Bug or unexpected behaviour?** [Open a bug report](https://github.com/NkgoloL/edo-boost-main/issues/new?template=bug_report.md)
-- **New feature idea?** [Open a feature request](https://github.com/NkgoloL/edo-boost-main/issues/new?template=feature_request.md)
-- **Questions about a specific module?** Add a comment to the relevant file or open a Discussion
-
----
-
-_Built with Ubuntu — "I am because we are." Every contribution matters._ 🇿🇦

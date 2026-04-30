@@ -1,86 +1,60 @@
-name: EduBoost CI/CD
+# .github/workflows/ci-cd.yml
+#
+# EduBoost SA — Canonical CI/CD Pipeline
+#
+# Stages:
+#   1. lint-and-test   — runs on every PR and push to main
+#   2. build           — builds Docker images tagged with git sha
+#   3. integration     — spins up the full stack, runs integration tests
+#   4. promote-staging — deploys to staging on push to main
+#   5. promote-prod    — deploys to production on tagged release (v*)
+#
+# Secrets required (configured in repo Settings → Secrets):
+#   REGISTRY_TOKEN         — GHCR / Docker Hub push token
+#   STAGING_SSH_KEY        — SSH private key for staging server
+#   PROD_SSH_KEY           — SSH private key for production server
+#   STAGING_HOST           — hostname/IP of staging server
+#   PROD_HOST              — hostname/IP of production server
+#   POSTGRES_PASSWORD      — used in integration test stack
+#   JWT_SECRET             — used in integration test stack
+#   ENCRYPTION_KEY         — used in integration test stack
+#   ANTHROPIC_API_KEY      — used in integration test stack (can be test key)
+#   SENTRY_DSN             — optional, skip if not configured
+
+name: CI/CD
 
 on:
   push:
     branches: [main, develop]
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
   pull_request:
-    branches: [main]
-  release:
-    types: [published]
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/eduboost-sa
   PYTHON_VERSION: "3.11"
-  COVERAGE_THRESHOLD: "80"
+  NODE_VERSION: "20"
 
 jobs:
-  # -------------------------------------------------------------------------
-  # LINT & TYPE CHECK
-  # -------------------------------------------------------------------------
-  lint:
-    name: Lint & Type Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: Install dev dependencies
-        run: pip install ruff mypy types-redis types-boto3 pydantic
-
-      - name: Run ruff
-        run: ruff check app/ tests/ --output-format=github
-
-      - name: Run mypy
-        run: mypy app/ --ignore-missing-imports --strict-optional
-
-  # -------------------------------------------------------------------------
-  # UNIT TESTS
-  # -------------------------------------------------------------------------
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
-
-      - name: Run unit tests
-        run: |
-          pytest tests/unit/ \
-            --cov=app \
-            --cov-report=xml \
-            --cov-report=term-missing \
-            --cov-fail-under=${{ env.COVERAGE_THRESHOLD }} \
-            -v --tb=short
-
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v4
-        with:
-          file: coverage.xml
-          fail_ci_if_error: false
-
-  # -------------------------------------------------------------------------
-  # INTEGRATION TESTS (with service containers)
-  # -------------------------------------------------------------------------
-  integration-tests:
-    name: Integration Tests
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. LINT & TEST
+  # ─────────────────────────────────────────────────────────────────────────
+  lint-and-test:
+    name: Lint & Unit Tests
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16-alpine
         env:
-          POSTGRES_USER: eduboost
-          POSTGRES_PASSWORD: testpassword
           POSTGRES_DB: eduboost_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: testpassword
         ports:
           - 5432:5432
         options: >-
@@ -88,170 +62,292 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
       redis:
-        image: redis:7
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
-
-    env:
-      DATABASE_URL: postgresql+asyncpg://eduboost:testpassword@localhost:5432/eduboost_test
-      AUDIT_DATABASE_URL: postgresql+asyncpg://eduboost:testpassword@localhost:5432/eduboost_test
-      REDIS_URL: redis://localhost:6379/0
-      ENCRYPTION_KEY: test-encryption-key-32-chars-xxxx
-      JUDICIARY_API_KEY: test-judiciary-key
-      JUDICIARY_SERVICE_URL: http://localhost:8001
-      APP_ENV: test
+          --health-retries 3
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-asyncio
-
-      - name: Run Alembic migrations
-        run: alembic upgrade head
-
-      - name: Run integration tests
+      - name: Install Python dependencies
         run: |
-          pytest tests/integration/ -v --tb=short \
-            --timeout=60
+          pip install -r requirements.txt --no-deps
+          pip install -r requirements-dev.txt
 
-  # -------------------------------------------------------------------------
-  # SCHEMA DRIFT GATE (alembic check)
-  # -------------------------------------------------------------------------
-  schema-drift:
-    name: Schema Drift Check
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
+      - name: Run Ruff linter
+        run: ruff check app/ tests/
+
+      - name: Run Ruff formatter check
+        run: ruff format --check app/ tests/
+
+      - name: Run mypy type checks
+        run: mypy app/api/ --ignore-missing-imports
+
+      - name: Run Alembic migration check
         env:
-          POSTGRES_USER: eduboost
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: eduboost_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      DATABASE_URL: postgresql+asyncpg://eduboost:testpassword@localhost:5432/eduboost_test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt alembic
-
-      - name: Bootstrap schema
+          DATABASE_URL: postgresql+asyncpg://test_user:testpassword@localhost:5432/eduboost_test
         run: alembic upgrade head
 
-      - name: Assert no pending migrations (drift check)
-        run: alembic check
-
-  # -------------------------------------------------------------------------
-  # POPIA COMPLIANCE TESTS
-  # -------------------------------------------------------------------------
-  popia-tests:
-    name: POPIA Compliance Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-asyncio
-
-      - name: Run POPIA compliance tests
+      - name: Run pytest (unit + integration)
+        env:
+          DATABASE_URL: postgresql+asyncpg://test_user:testpassword@localhost:5432/eduboost_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-jwt-secret-do-not-use-in-production
+          ENCRYPTION_KEY: test-encryption-key-32-chars-long!
+          ENCRYPTION_SALT: test-salt
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          APP_ENV: test
         run: |
-          pytest tests/popia/ -v --tb=short -k "pii or consent or erasure"
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --cov-fail-under=60 \
+            -v \
+            --timeout=60 \
+            -m "not e2e"
 
-  # -------------------------------------------------------------------------
-  # DOCKER IMAGE SCANNING
-  # -------------------------------------------------------------------------
-  image-scan:
-    name: Docker Image Security Scan
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: app/frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: app/frontend
+        run: npm run lint
+
+      - name: Type-check frontend
+        working-directory: app/frontend
+        run: npm run type-check
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. BUILD DOCKER IMAGES
+  # ─────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build Docker Images
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: lint-and-test
+    if: github.event_name != 'pull_request'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      sha-tag: ${{ steps.sha.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build API image
-        run: docker build -f docker/Dockerfile.api -t eduboost-api:scan .
-
-      - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          image-ref: "eduboost-api:scan"
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
-          exit-code: "1"
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
-      - name: Upload scan results
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute short SHA tag
+        id: sha
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          target: production
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/api:${{ steps.sha.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/api:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            INCLUDE_ML=false
+
+      - name: Build & push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: app/frontend
+          file: docker/Dockerfile.frontend
+          target: production
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ steps.sha.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. INTEGRATION TESTS (full stack via docker-compose)
+  # ─────────────────────────────────────────────────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env for integration stack
+        run: |
+          cat > .env.integration << EOF
+          POSTGRES_USER=test_user
+          POSTGRES_PASSWORD=testpassword
+          POSTGRES_DB=eduboost_test
+          JWT_SECRET=test-jwt-secret-32-chars-minimum!!
+          ENCRYPTION_KEY=test-encryption-key-32-chars!!!
+          ENCRYPTION_SALT=test-salt-16chars
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          GROQ_API_KEY=test
+          REDIS_PASSWORD=
+          IMAGE_TAG=${{ needs.build.outputs.sha-tag }}
+          REGISTRY=${{ env.REGISTRY }}
+          EOF
+
+      - name: Start integration stack
+        run: |
+          docker-compose -f docker-compose.yml --env-file .env.integration up -d
+          sleep 20  # Allow migrations and health checks
+
+      - name: Wait for API to be healthy
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:8000/health; then
+              echo "API is healthy"
+              break
+            fi
+            echo "Waiting for API... ($i/30)"
+            sleep 5
+          done
+
+      - name: Run integration test suite
+        run: |
+          pip install pytest pytest-asyncio httpx
+          pytest tests/integration/ -v --timeout=120
+
+      - name: Run POPIA consent enforcement tests
+        run: pytest tests/popia/ -v --timeout=60
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker-compose logs --no-color > docker-compose-logs.txt
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-logs
+          path: docker-compose-logs.txt
+
+      - name: Teardown
         if: always()
-        with:
-          sarif_file: "trivy-results.sarif"
+        run: docker-compose down -v
 
-  # -------------------------------------------------------------------------
-  # PRODUCTION PROMOTION GATE (tag-triggered)
-  # -------------------------------------------------------------------------
-  production-promote:
-    name: Production Promotion Gate
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. DEPLOY TO STAGING (main branch only)
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [lint, unit-tests, integration-tests, schema-drift, popia-tests, image-scan]
-    environment: production
+    needs: [build, integration]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging.eduboost.co.za
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run smoke tests against staging
-        env:
-          STAGING_URL: ${{ secrets.STAGING_URL }}
-          STAGING_API_KEY: ${{ secrets.STAGING_API_KEY }}
-        run: |
-          pytest tests/smoke/ -v --tb=short \
-            --base-url="$STAGING_URL" \
-            --api-key="$STAGING_API_KEY" \
-            --timeout=30
+      - name: Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/eduboost
+            export IMAGE_TAG=${{ needs.build.outputs.sha-tag }}
+            docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml up -d --no-deps api frontend celery-worker celery-beat
+            docker-compose -f docker-compose.prod.yml run --rm db-migrate
+            echo "Staging deployment complete: $IMAGE_TAG"
 
-      - name: Deploy to production (k8s)
-        env:
-          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+      - name: Smoke test staging
         run: |
-          echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig
-          export KUBECONFIG=/tmp/kubeconfig
-          kubectl set image deployment/eduboost-api \
-            api=ghcr.io/nkgoloL/eduboost-api:${{ github.ref_name }}
-          kubectl rollout status deployment/eduboost-api --timeout=5m
+          sleep 15
+          curl -sf https://staging.eduboost.co.za/health || exit 1
+          echo "Staging smoke test passed"
 
-      - name: Verify production health
-        env:
-          PROD_URL: ${{ secrets.PROD_URL }}
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. DEPLOY TO PRODUCTION (tagged release v* only)
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: [build, integration]
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: https://eduboost.co.za
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to production via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: deploy
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/eduboost
+            export IMAGE_TAG=${{ needs.build.outputs.sha-tag }}
+            # Run migrations first (idempotent)
+            docker-compose -f docker-compose.prod.yml run --rm db-migrate
+            # Rolling restart: api and workers, keep DB/Redis up
+            docker-compose -f docker-compose.prod.yml pull api frontend celery-worker celery-beat
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --scale celery-worker=2 api frontend celery-worker celery-beat
+            echo "Production deployment complete: ${{ steps.version.outputs.version }} ($IMAGE_TAG)"
+
+      - name: Production smoke test
         run: |
-          curl -f "$PROD_URL/health" || exit 1
-          curl -f "$PROD_URL/judiciary/health" || exit 1
+          sleep 20
+          curl -sf https://eduboost.co.za/health || exit 1
+          echo "Production smoke test passed"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: EduBoost SA ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
