@@ -45,11 +45,15 @@ def upgrade() -> None:
             RAISE EXCEPTION 'constitutional_rules rows are immutable. Insert a new version row instead.';
         END;
         $$;
+    """)
 
+    op.execute("""
         CREATE TRIGGER trg_constitutional_rules_no_update
         BEFORE UPDATE ON constitutional_rules
         FOR EACH ROW EXECUTE FUNCTION constitutional_rules_immutable();
+    """)
 
+    op.execute("""
         CREATE TRIGGER trg_constitutional_rules_no_delete
         BEFORE DELETE ON constitutional_rules
         FOR EACH ROW EXECUTE FUNCTION constitutional_rules_immutable();
@@ -166,11 +170,15 @@ def upgrade() -> None:
             RAISE EXCEPTION 'audit_log is append-only. UPDATE and DELETE are prohibited.';
         END;
         $$;
+    """)
 
+    op.execute("""
         CREATE TRIGGER trg_audit_log_no_update
         BEFORE UPDATE ON audit_log
         FOR EACH ROW EXECUTE FUNCTION audit_log_append_only();
+    """)
 
+    op.execute("""
         CREATE TRIGGER trg_audit_log_no_delete
         BEFORE DELETE ON audit_log
         FOR EACH ROW EXECUTE FUNCTION audit_log_append_only();
@@ -187,9 +195,11 @@ def upgrade() -> None:
             session_data JSONB,
             created_at TIMESTAMPTZ DEFAULT now()
         );
+    """)
 
-        ALTER TABLE learner_sessions ENABLE ROW LEVEL SECURITY;
+    op.execute("ALTER TABLE learner_sessions ENABLE ROW LEVEL SECURITY;")
 
+    op.execute("""
         CREATE POLICY consent_gate ON learner_sessions
           USING (
             EXISTS (
